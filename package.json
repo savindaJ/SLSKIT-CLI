@@ -1,13 +1,13 @@
 {
-  "name": "sless",
+  "name": "slskit",
   "version": "0.1.0",
-  "description": "Global sless CLI",
+  "description": "Scaffold and incrementally grow multi-service AWS Lambda projects",
   "license": "MIT",
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "sless": "bin/sless.js"
+    "slskit": "bin/slskit.js"
   },
   "files": [
     "bin",
@@ -21,7 +21,7 @@
     "clean": "rm -rf dist",
     "dev": "tsx src/cli.ts",
     "prepublishOnly": "npm run build",
-    "start": "node bin/sless.js",
+    "start": "node bin/slskit.js",
     "test": "jest",
     "test:watch": "jest --watch"
   },

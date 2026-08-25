@@ -4,7 +4,6 @@ import { CliError } from "../../src/core/errors";
 const FULL_OPTIONS = {
   name: "my-app",
   runtime: "typescript",
-  framework: "sam",
   database: "none",
   apiGateway: "yes",
   layer: "no",
@@ -18,8 +17,7 @@ describe("collectAnswers", () => {
     expect(answers).toMatchObject({
       name: "my-app",
       runtime: "typescript",
-      framework: "sam",
-      database: "none",
+          database: "none",
       apiGateway: true,
       layer: false,
       memorySize: 256,
@@ -34,16 +32,6 @@ describe("collectAnswers", () => {
     for (let i = 0; i < aliases.length; i++) {
       const answers = await collectAnswers({ ...FULL_OPTIONS, runtime: aliases[i] });
       expect(answers.runtime).toBe(expected[i]);
-    }
-  });
-
-  it("parses framework aliases", async () => {
-    for (const [alias, expected] of [
-      ["sls", "serverless"],
-      ["aws-sam", "sam"],
-    ] as const) {
-      const answers = await collectAnswers({ ...FULL_OPTIONS, framework: alias });
-      expect(answers.framework).toBe(expected);
     }
   });
 
@@ -84,12 +72,6 @@ describe("collectAnswers", () => {
     await expect(collectAnswers({ ...FULL_OPTIONS, runtime: "ruby" })).rejects.toThrow(CliError);
     await expect(collectAnswers({ ...FULL_OPTIONS, runtime: "ruby" })).rejects.toThrow(
       /Unknown runtime/
-    );
-  });
-
-  it("throws for unknown framework", async () => {
-    await expect(collectAnswers({ ...FULL_OPTIONS, framework: "terraform" })).rejects.toThrow(
-      /Unknown framework/
     );
   });
 

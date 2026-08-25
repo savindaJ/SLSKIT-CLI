@@ -1,18 +1,18 @@
 import {
-  LAMBDA_APPS,
+  INFRA_FILE,
   SRC_DIR,
   handlerFileName,
-  infraFileName,
   lambdaRuntime,
+  sameRuntimeFamily,
   serviceTemplatePath,
   sharedCodeDir,
   sourceExt,
 } from "./types.js";
-import type { InitAnswers } from "./types.js";
+import type { InitAnswers, RuntimeId, ServiceDef } from "./types.js";
 
 // Handler paths are relative to the Lambda CodeUri, which is the project root.
-function handlerValue(answers: InitAnswers, appName: string, fnName: string): string {
-  if (answers.runtime === "python") {
+function handlerValue(runtime: RuntimeId, appName: string, fnName: string): string {
+  if (runtime === "python") {
     return `${SRC_DIR}.functions.${appName}.${fnName}.handler.handler`;
   }
 
@@ -21,56 +21,58 @@ function handlerValue(answers: InitAnswers, appName: string, fnName: string): st
 
 export function buildSlessManifest(
   answers: InitAnswers,
+  apps: ServiceDef[],
   generatedFiles: string[]
 ): Record<string, unknown> {
-  const infra = infraFileName(answers.framework);
-  const runtime = lambdaRuntime(answers.runtime);
-  const handler = handlerFileName(answers.runtime);
-  const ext = sourceExt(answers.runtime);
   const sharedDir = sharedCodeDir(answers);
-  const isSam = answers.framework === "sam";
 
-  const applications = LAMBDA_APPS.map((app) => ({
+  const applications = apps.map((app) => ({
     name: app.name,
     path: `${SRC_DIR}/functions/${app.name}`,
-    template: serviceTemplatePath(answers.framework, app.name),
-    functions: app.functions.map((fn) => ({
-      id: `${app.name}.${fn.name}`,
-      name: fn.name,
-      path: `${SRC_DIR}/functions/${app.name}/${fn.name}`,
-      handlerFile: `${SRC_DIR}/functions/${app.name}/${fn.name}/${handler}`,
-      handler: handlerValue(answers, app.name, fn.name),
-      service: {
-        application: app.name,
-        path: `${SRC_DIR}/services/${app.name}/${fn.name}.${ext}`,
-        export: fn.name,
-      },
-      runtime,
-      memorySize: answers.memorySize,
-      apiGateway: answers.apiGateway
-        ? {
-            enabled: true,
-            gateway: isSam ? app.name : "gateway",
-            path: fn.httpPath,
-            method: fn.method,
-          }
-        : { enabled: false },
-      layer: answers.layer
-        ? { enabled: true, name: "shared", path: `${SRC_DIR}/shared` }
-        : { enabled: false },
-    })),
+    template: serviceTemplatePath(app.name),
+    functions: app.functions.map((fn) => {
+      const fnRuntime = fn.runtime ?? answers.runtime;
+      const sameFamily = sameRuntimeFamily(fnRuntime, answers.runtime);
+      const attachesLayer = answers.layer && sameFamily;
+
+      return {
+        id: `${app.name}.${fn.name}`,
+        name: fn.name,
+        path: `${SRC_DIR}/functions/${app.name}/${fn.name}`,
+        handlerFile: `${SRC_DIR}/functions/${app.name}/${fn.name}/${handlerFileName(fnRuntime)}`,
+        handler: handlerValue(fnRuntime, app.name, fn.name),
+        service: {
+          application: app.name,
+          path: `${SRC_DIR}/services/${app.name}/${fn.name}.${sourceExt(fnRuntime)}`,
+          export: fn.name,
+        },
+        runtime: lambdaRuntime(fnRuntime),
+        memorySize: fn.memorySize ?? answers.memorySize,
+        apiGateway: answers.apiGateway
+          ? {
+              enabled: true,
+              gateway: app.name,
+              path: fn.httpPath,
+              method: fn.method,
+            }
+          : { enabled: false },
+        layer: attachesLayer
+          ? { enabled: true, name: "shared", path: `${SRC_DIR}/shared` }
+          : { enabled: false },
+      };
+    }),
   }));
 
-  const services = LAMBDA_APPS.map((app) => ({
+  const services = apps.map((app) => ({
     application: app.name,
     path: `${SRC_DIR}/services/${app.name}`,
     files: app.functions.map(
-      (fn) => `${SRC_DIR}/services/${app.name}/${fn.name}.${ext}`
+      (fn) => `${SRC_DIR}/services/${app.name}/${fn.name}.${sourceExt(fn.runtime ?? answers.runtime)}`
     ),
   }));
 
   const routes = answers.apiGateway
-    ? LAMBDA_APPS.flatMap((app) =>
+    ? apps.flatMap((app) =>
         app.functions.map((fn) => ({
           path: fn.httpPath,
           method: fn.method,
@@ -80,11 +82,10 @@ export function buildSlessManifest(
     : [];
 
   const directories = [
-    ...(answers.apiGateway && !isSam ? ["gateway"] : []),
     SRC_DIR,
     `${SRC_DIR}/functions`,
     `${SRC_DIR}/services`,
-    ...LAMBDA_APPS.flatMap((app) => [
+    ...apps.flatMap((app) => [
       `${SRC_DIR}/functions/${app.name}`,
       ...app.functions.map((fn) => `${SRC_DIR}/functions/${app.name}/${fn.name}`),
       `${SRC_DIR}/services/${app.name}`,
@@ -93,24 +94,26 @@ export function buildSlessManifest(
     ...(answers.database === "prisma" ? ["prisma"] : []),
   ];
 
+  const layerAttachedTo = apps.flatMap((app) =>
+    app.functions
+      .filter((fn) => sameRuntimeFamily(fn.runtime ?? answers.runtime, answers.runtime))
+      .map((fn) => `${app.name}.${fn.name}`)
+  );
+
   return {
     name: answers.name,
     version: "0.1.0",
-    generatedBy: "sless",
+    generatedBy: "slskit",
     runtime: {
       id: answers.runtime,
-      lambda: runtime,
+      lambda: lambdaRuntime(answers.runtime),
     },
     framework: {
-      id: answers.framework,
+      id: "sam",
       files: {
-        root: isSam ? "template.yaml" : undefined,
-        application: infra,
-        applications: LAMBDA_APPS.map((app) =>
-          serviceTemplatePath(answers.framework, app.name)
-        ),
-        gateway: answers.apiGateway && !isSam ? `gateway/${infra}` : undefined,
-        layer: answers.layer && !isSam ? `${SRC_DIR}/shared/${infra}` : undefined,
+        root: INFRA_FILE,
+        application: INFRA_FILE,
+        applications: apps.map((app) => serviceTemplatePath(app.name)),
       },
     },
     database: {
@@ -126,10 +129,8 @@ export function buildSlessManifest(
           name: `${answers.name}-http-api`,
           type: "HttpApi",
           // SAM gives each service its own API so every reference resolves inside one template.
-          perService: isSam,
-          templates: isSam
-            ? LAMBDA_APPS.map((app) => serviceTemplatePath("sam", app.name))
-            : [`gateway/${infra}`],
+          perService: true,
+          templates: apps.map((app) => serviceTemplatePath(app.name)),
           attachAllFunctions: true,
           routes,
         }
@@ -140,14 +141,10 @@ export function buildSlessManifest(
           name: `${answers.name}-shared`,
           path: `${SRC_DIR}/shared`,
           source: sharedDir,
-          templates: isSam
-            ? LAMBDA_APPS.map((app) => serviceTemplatePath("sam", app.name))
-            : [`${SRC_DIR}/shared/${infra}`],
-          compatibleRuntimes: [runtime],
-          attachAllFunctions: true,
-          attachedTo: LAMBDA_APPS.flatMap((app) =>
-            app.functions.map((fn) => `${app.name}.${fn.name}`)
-          ),
+          templates: apps.map((app) => serviceTemplatePath(app.name)),
+          compatibleRuntimes: [lambdaRuntime(answers.runtime)],
+          attachAllFunctions: layerAttachedTo.length === applications.flatMap((a) => a.functions).length,
+          attachedTo: layerAttachedTo,
         }
       : { enabled: false, path: `${SRC_DIR}/shared` },
     applications,

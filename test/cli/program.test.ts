@@ -43,7 +43,7 @@ function stderrText(result: { stderr: string }): string {
   return `${result.stderr}${cliLogs.errors.join("\n")}`;
 }
 
-describe("sless CLI program", () => {
+describe("slskit CLI program", () => {
   beforeEach(() => {
     cliLogs.errors.length = 0;
     cliLogs.infos.length = 0;
@@ -52,13 +52,13 @@ describe("sless CLI program", () => {
   it("prints help when invoked with no arguments", async () => {
     const result = await runProgram([]);
     expect(result.status).toBe(0);
-    expect(result.stdout).toMatch(/Usage: sless/);
+    expect(result.stdout).toMatch(/Usage: slskit/);
     expect(result.stdout).toMatch(/init/);
   });
 
   it("prints help with --help", async () => {
     const result = await runProgram(["--help"]);
-    expect(result.stdout).toMatch(/Global sless CLI/);
+    expect(result.stdout).toMatch(/Scaffold and incrementally grow/);
     expect(result.stdout).toMatch(/init/);
   });
 
@@ -78,7 +78,7 @@ describe("sless CLI program", () => {
     const init = program.commands.find((command) => command.name() === "init");
     const help = init?.helpInformation() ?? "";
 
-    expect(help).toMatch(/Scaffold a multi-service serverless project/);
+    expect(help).toMatch(/Scaffold a multi-service AWS SAM project/);
     expect(help).toMatch(/--runtime/);
     expect(help).toMatch(/--memory/);
   });
@@ -99,14 +99,14 @@ describe("sless CLI program", () => {
   });
 });
 
-describe("sless init command", () => {
+describe("slskit init command", () => {
   beforeEach(() => {
     cliLogs.errors.length = 0;
     cliLogs.infos.length = 0;
   });
 
   it("requires all flags in non-interactive mode", async () => {
-    const dir = createTempDir("sless-cli-missing-");
+    const dir = createTempDir("slskit-cli-missing-");
     const result = await runProgram(["init", "only-name"], { cwd: dir });
     expect(result.status).not.toBe(0);
     expect(stderrText(result)).toMatch(/Non-interactive init needs/);
@@ -114,7 +114,7 @@ describe("sless init command", () => {
   });
 
   it("scaffolds a project with all required flags", async () => {
-    const dir = createTempDir("sless-cli-init-");
+    const dir = createTempDir("slskit-cli-init-");
     const result = await runProgram(["init", "demo-app", ...BASE_INIT_FLAGS], { cwd: dir });
 
     expect(result.status).toBe(0);
@@ -125,16 +125,14 @@ describe("sless init command", () => {
     removeDir(dir);
   });
 
-  it("accepts runtime and framework aliases", async () => {
-    const dir = createTempDir("sless-cli-alias-");
+  it("accepts runtime and database aliases", async () => {
+    const dir = createTempDir("slskit-cli-alias-");
     const result = await runProgram(
       [
         "init",
         "alias-app",
         "--runtime",
         "ts",
-        "--framework",
-        "sls",
         "--database",
         "mongo",
         "--api-gateway",
@@ -149,13 +147,14 @@ describe("sless init command", () => {
 
     expect(result.status).toBe(0);
     const files = listFiles(`${dir}/alias-app`);
-    expect(files).toContain("gateway/serverless.yml");
-    expect(files).toContain("src/shared/serverless.yml");
+    expect(files).toContain("template.yaml");
+    expect(files).toContain("src/functions/auth/template.yaml");
+    expect(files.filter((file) => file.endsWith(".yml"))).toEqual([]);
     removeDir(dir);
   });
 
   it("rejects invalid runtime", async () => {
-    const dir = createTempDir("sless-cli-bad-runtime-");
+    const dir = createTempDir("slskit-cli-bad-runtime-");
     const result = await runProgram(
       ["init", "bad-app", "--runtime", "ruby", ...BASE_INIT_FLAGS.slice(2)],
       { cwd: dir }
@@ -166,15 +165,13 @@ describe("sless init command", () => {
   });
 
   it("rejects invalid memory size", async () => {
-    const dir = createTempDir("sless-cli-bad-memory-");
+    const dir = createTempDir("slskit-cli-bad-memory-");
     const result = await runProgram(
       [
         "init",
         "bad-app",
         "--runtime",
         "javascript",
-        "--framework",
-        "sam",
         "--database",
         "none",
         "--api-gateway",
@@ -192,15 +189,13 @@ describe("sless init command", () => {
   });
 
   it("rejects invalid api-gateway value", async () => {
-    const dir = createTempDir("sless-cli-bad-gateway-");
+    const dir = createTempDir("slskit-cli-bad-gateway-");
     const result = await runProgram(
       [
         "init",
         "bad-app",
         "--runtime",
         "javascript",
-        "--framework",
-        "sam",
         "--database",
         "none",
         "--api-gateway",
@@ -218,7 +213,7 @@ describe("sless init command", () => {
   });
 
   it("fails when target directory is not empty", async () => {
-    const dir = createTempDir("sless-cli-nonempty-");
+    const dir = createTempDir("slskit-cli-nonempty-");
     fs.mkdirSync(`${dir}/existing`, { recursive: true });
     fs.writeFileSync(`${dir}/existing/readme.txt`, "keep");
 
@@ -229,7 +224,7 @@ describe("sless init command", () => {
   });
 
   it("overwrites generated files with --force", async () => {
-    const dir = createTempDir("sless-cli-force-");
+    const dir = createTempDir("slskit-cli-force-");
     fs.mkdirSync(`${dir}/forced`, { recursive: true });
     fs.writeFileSync(`${dir}/forced/old.txt`, "old");
 
@@ -242,15 +237,13 @@ describe("sless init command", () => {
   });
 
   it("writes memory size into generated templates", async () => {
-    const dir = createTempDir("sless-cli-memory-");
+    const dir = createTempDir("slskit-cli-memory-");
     const result = await runProgram(
       [
         "init",
         "mem-app",
         "--runtime",
         "javascript",
-        "--framework",
-        "sam",
         "--database",
         "none",
         "--api-gateway",
@@ -273,15 +266,13 @@ describe("sless init command", () => {
   });
 
   it("gives each service its own HTTP API when api-gateway is yes", async () => {
-    const dir = createTempDir("sless-cli-gateway-");
+    const dir = createTempDir("slskit-cli-gateway-");
     const result = await runProgram(
       [
         "init",
         "gw-app",
         "--runtime",
         "javascript",
-        "--framework",
-        "sam",
         "--database",
         "none",
         "--api-gateway",
@@ -309,15 +300,13 @@ describe("sless init command", () => {
   });
 
   it("generates complete sless.json manifest", async () => {
-    const dir = createTempDir("sless-cli-manifest-");
+    const dir = createTempDir("slskit-cli-manifest-");
     const result = await runProgram(
       [
         "init",
         "manifest-app",
         "--runtime",
         "javascript",
-        "--framework",
-        "sam",
         "--database",
         "dynamodb",
         "--api-gateway",

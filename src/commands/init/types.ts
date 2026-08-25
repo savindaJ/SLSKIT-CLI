@@ -1,5 +1,4 @@
 export type RuntimeId = "typescript" | "javascript" | "python";
-export type FrameworkId = "sam" | "serverless";
 export type DatabaseId = "none" | "prisma" | "mongoose" | "dynamodb";
 export type MemorySize = 128 | 256 | 512 | 1024 | 2048 | 3008 | 4096 | 10240;
 
@@ -10,7 +9,6 @@ export const MEMORY_SIZES: MemorySize[] = [
 export interface InitOptions {
   name?: string;
   runtime?: string;
-  framework?: string;
   database?: string;
   apiGateway?: string | boolean;
   layer?: string | boolean;
@@ -21,7 +19,6 @@ export interface InitOptions {
 export interface InitAnswers {
   name: string;
   runtime: RuntimeId;
-  framework: FrameworkId;
   database: DatabaseId;
   apiGateway: boolean;
   layer: boolean;
@@ -29,10 +26,17 @@ export interface InitAnswers {
   force: boolean;
 }
 
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+
 export interface ServiceFunction {
   name: string;
   httpPath: string;
-  method: "GET" | "POST";
+  method: HttpMethod;
+  // Per-function overrides. Unset for the functions init() scaffolds, since those
+  // all share the project's runtime/memory; set when "slskit function" attaches a
+  // function whose language or memory differs from the rest of its application.
+  runtime?: RuntimeId;
+  memorySize?: MemorySize;
 }
 
 export interface ServiceDef {
@@ -57,9 +61,9 @@ export const LAMBDA_APPS: ServiceDef[] = [
   },
 ];
 
-export function infraFileName(framework: FrameworkId): "template.yaml" | "serverless.yml" {
-  return framework === "sam" ? "template.yaml" : "serverless.yml";
-}
+// Every generated project is an AWS SAM project: a root stack that nests one
+// template per application, each named the same way.
+export const INFRA_FILE = "template.yaml";
 
 export function lambdaRuntime(runtime: RuntimeId): string {
   return runtime === "python" ? "python3.12" : "nodejs20.x";
@@ -95,9 +99,16 @@ export function sharedCodeDir(answers: InitAnswers): string {
     : `${SRC_DIR}/shared/nodejs`;
 }
 
-export function serviceTemplatePath(
-  framework: FrameworkId,
-  appName: string
-): string {
-  return `${SRC_DIR}/functions/${appName}/${infraFileName(framework)}`;
+export function serviceTemplatePath(appName: string): string {
+  return `${SRC_DIR}/functions/${appName}/${INFRA_FILE}`;
+}
+
+// Node and Python are different runtime families: a layer/db built for one can never
+// be attached to or imported by a function running the other.
+export function runtimeFamily(runtime: RuntimeId): "node" | "python" {
+  return runtime === "python" ? "python" : "node";
+}
+
+export function sameRuntimeFamily(a: RuntimeId, b: RuntimeId): boolean {
+  return runtimeFamily(a) === runtimeFamily(b);
 }

@@ -16,6 +16,8 @@ jest.mock("../../src/core/logger", () => ({
   },
 }));
 
+import fs from "node:fs";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { scaffoldProject } from "../../src/commands/init/scaffold";
 import { minimalAnswers } from "../helpers/fixtures";
@@ -27,7 +29,7 @@ function callArgs(): string[] {
   return mockSpawnSync.mock.calls.map(([, args]) => (args as string[]).join(" "));
 }
 
-describe("sless run command", () => {
+describe("slskit run command", () => {
   beforeEach(() => {
     cliLogs.errors.length = 0;
     cliLogs.infos.length = 0;
@@ -36,7 +38,7 @@ describe("sless run command", () => {
   });
 
   it("errors when sless.json is missing", async () => {
-    const dir = createTempDir("sless-run-missing-");
+    const dir = createTempDir("slskit-run-missing-");
     const result = await runProgram(["run"], { cwd: dir });
 
     expect(result.status).not.toBe(0);
@@ -44,22 +46,22 @@ describe("sless run command", () => {
     removeDir(dir);
   });
 
-  it("rejects a non-sam project", async () => {
-    const dir = createTempDir("sless-run-notsam-");
-    const root = await scaffoldProject(
-      { ...minimalAnswers, name: "demo-app", framework: "serverless" },
-      dir
+  it("rejects a project that is not AWS SAM", async () => {
+    const dir = createTempDir("slskit-run-notsam-");
+    fs.writeFileSync(
+      path.join(dir, "sless.json"),
+      JSON.stringify({ name: "demo-app", framework: { id: "serverless" } })
     );
 
-    const result = await runProgram(["run"], { cwd: root });
+    const result = await runProgram(["run"], { cwd: dir });
 
     expect(result.status).not.toBe(0);
-    expect(cliLogs.errors.join("\n")).toMatch(/supports SAM projects only/);
+    expect(cliLogs.errors.join("\n")).toMatch(/supports AWS SAM projects only/);
     removeDir(dir);
   });
 
   it("shows an install guide and errors when sam cli is missing", async () => {
-    const dir = createTempDir("sless-run-nosam-");
+    const dir = createTempDir("slskit-run-nosam-");
     const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
     mockSpawnSync.mockReturnValue({ error: new Error("ENOENT"), status: null });
 
@@ -72,7 +74,7 @@ describe("sless run command", () => {
   });
 
   it("runs sam build then sam local start-api on the given port", async () => {
-    const dir = createTempDir("sless-run-ok-");
+    const dir = createTempDir("slskit-run-ok-");
     const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
 
     mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
@@ -94,7 +96,7 @@ describe("sless run command", () => {
   });
 
   it("skips sam build with --no-build", async () => {
-    const dir = createTempDir("sless-run-nobuild-");
+    const dir = createTempDir("slskit-run-nobuild-");
     const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
 
     mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {

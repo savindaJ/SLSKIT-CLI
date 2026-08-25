@@ -38,6 +38,26 @@ ${dbSetup}    logger.info("${fn.name} invoked")
 `;
 }
 
+// Used when a function's runtime family differs from the project's: it can't attach
+// the project's layer or import its db client (built for the other family), so it
+// ships as a plain, self-contained handler instead.
+export function standalonePythonService(fn: ServiceFunction): string {
+  return `import json
+
+
+def ${fn.name}(event, context):
+    print(json.dumps({"level": "info", "message": "${fn.name} invoked"}))
+    body = event.get("body")
+    payload = json.loads(body) if body else {}
+
+    return {
+        "statusCode": 200,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps({"message": "${fn.name}", "input": payload}),
+    }
+`;
+}
+
 export function pythonHandler(appName: string, fn: ServiceFunction): string {
   return `from ${SRC_DIR}.services.${appName}.${fn.name} import ${fn.name}
 

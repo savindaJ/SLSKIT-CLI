@@ -3,7 +3,6 @@ import {
   LAMBDA_APPS,
   SRC_DIR,
   handlerFileName,
-  infraFileName,
   serviceTemplatePath,
   sharedCodeDir,
   sourceExt,
@@ -28,11 +27,6 @@ import {
 import { nodeHandler, nodeService } from "./templates/node.js";
 import { pythonHandler, pythonService } from "./templates/python.js";
 import { samRootTemplate, samServiceTemplate } from "./templates/sam.js";
-import {
-  serverlessGatewayTemplate,
-  serverlessLayerTemplate,
-  serverlessTemplate,
-} from "./templates/serverless.js";
 
 function handlerSource(
   answers: InitAnswers,
@@ -54,8 +48,10 @@ function serviceSource(answers: InitAnswers, fn: ServiceFunction): string {
   return nodeService(answers, fn, answers.runtime === "typescript");
 }
 
-export function buildFileMap(answers: InitAnswers): Record<string, string> {
-  const infra = infraFileName(answers.framework);
+export function buildFileMap(
+  answers: InitAnswers,
+  envKeys: string[] = []
+): Record<string, string> {
   const files: Record<string, string> = {
     ".gitignore": gitignore(answers.runtime),
     "README.md": readme(answers),
@@ -83,17 +79,7 @@ export function buildFileMap(answers: InitAnswers): Record<string, string> {
     }
   }
 
-  if (answers.framework === "sam") {
-    files["template.yaml"] = samRootTemplate(answers);
-  }
-
-  if (answers.apiGateway && answers.framework === "serverless") {
-    files[`gateway/${infra}`] = serverlessGatewayTemplate(answers);
-  }
-
-  if (answers.layer && answers.framework === "serverless") {
-    files[`${SRC_DIR}/shared/${infra}`] = serverlessLayerTemplate(answers);
-  }
+  files["template.yaml"] = samRootTemplate(answers, LAMBDA_APPS, envKeys);
 
   const sharedDir = sharedCodeDir(answers);
   const isNodeLayer = answers.layer && answers.runtime !== "python";
@@ -127,10 +113,7 @@ export function buildFileMap(answers: InitAnswers): Record<string, string> {
       files[`${SRC_DIR}/services/${app.name}/__init__.py`] = "";
     }
 
-    files[serviceTemplatePath(answers.framework, app.name)] =
-      answers.framework === "sam"
-        ? samServiceTemplate(answers, app)
-        : serverlessTemplate(answers, app);
+    files[serviceTemplatePath(app.name)] = samServiceTemplate(answers, app, envKeys);
 
     for (const fn of app.functions) {
       if (answers.runtime === "python") {
@@ -147,7 +130,7 @@ export function buildFileMap(answers: InitAnswers): Record<string, string> {
   }
 
   files["sless.json"] = `${JSON.stringify(
-    buildSlessManifest(answers, Object.keys(files)),
+    buildSlessManifest(answers, LAMBDA_APPS, Object.keys(files)),
     null,
     2
   )}\n`;

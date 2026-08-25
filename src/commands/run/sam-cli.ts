@@ -22,7 +22,7 @@ function platformGuideUrl(): string {
 
 function printManualGuide(): void {
   logger.info(
-    `\nInstall AWS SAM CLI manually, then re-run "sless run":\n  ${platformGuideUrl()}\n\nVerify the install with: sam --version\n`
+    `\nInstall AWS SAM CLI manually, then re-run "slskit run":\n  ${platformGuideUrl()}\n\nVerify the install with: sam --version\n`
   );
 }
 

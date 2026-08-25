@@ -61,6 +61,36 @@ ${dbSetup}  logger.info("${fn.name} invoked");
 `;
 }
 
+// Used when a function's runtime family differs from the project's: it can't attach
+// the project's layer or import its db client (built for the other family), so it
+// ships as a plain, self-contained handler instead.
+export function standaloneNodeService(fn: ServiceFunction, typed: boolean): string {
+  const eventType = typed
+    ? `import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";\n\n`
+    : "";
+
+  const signature = typed
+    ? `export async function ${fn.name}(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {`
+    : `export async function ${fn.name}(event) {`;
+
+  return `${eventType}${signature}
+  console.log(JSON.stringify({ level: "info", message: "${fn.name} invoked" }));
+  const payload = event.body ? JSON.parse(event.body) : {};
+
+  return {
+    statusCode: 200,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: "${fn.name}",
+      input: payload,
+    }),
+  };
+}
+`;
+}
+
 export function nodeHandler(
   answers: InitAnswers,
   appName: string,

@@ -3,8 +3,8 @@ import { LAMBDA_APPS } from "../../src/commands/init/types";
 import {
   fullStackAnswers,
   minimalAnswers,
+  mongooseAnswers,
   pythonAnswers,
-  serverlessAnswers,
 } from "../helpers/fixtures";
 
 describe("buildFileMap", () => {
@@ -16,7 +16,6 @@ describe("buildFileMap", () => {
     expect(files[".gitignore"]).toBeDefined();
     expect(files["sless.json"]).toBeDefined();
     expect(files["template.yaml"]).toBeDefined();
-    expect(files["gateway/template.yaml"]).toBeUndefined();
   });
 
   it("puts all generated source under src/", () => {
@@ -86,20 +85,24 @@ describe("buildFileMap", () => {
   });
 
   it("uses a dotted root-relative handler path for python", () => {
-    const files = buildFileMap({ ...pythonAnswers, framework: "sam" });
+    const files = buildFileMap(pythonAnswers);
     expect(files["src/functions/auth/template.yaml"]).toMatch(
       /Handler: src\.functions\.auth\.login\.handler\.handler/
     );
   });
 
-  it("points the Serverless layer path at nodejs relative to src/shared/serverless.yml", () => {
-    const files = buildFileMap({ ...serverlessAnswers, layer: true });
-    expect(files["src/shared/serverless.yml"]).toMatch(/path: nodejs/);
+  it("points the SAM layer ContentUri at nodejs for a Node layer", () => {
+    const files = buildFileMap({ ...mongooseAnswers, layer: true });
+    expect(files["src/functions/auth/template.yaml"]).toMatch(
+      /ContentUri: \.\.\/\.\.\/shared\/nodejs/
+    );
   });
 
-  it("points the Serverless layer path at python for a Python layer", () => {
+  it("points the SAM layer ContentUri at python for a Python layer", () => {
     const files = buildFileMap(pythonAnswers);
-    expect(files["src/shared/serverless.yml"]).toMatch(/path: python/);
+    expect(files["src/functions/auth/template.yaml"]).toMatch(
+      /ContentUri: \.\.\/\.\.\/shared\/python/
+    );
   });
 
   it("writes plain JS (not TS) into a TypeScript project's Lambda layer", () => {
@@ -170,8 +173,7 @@ describe("buildFileMap", () => {
 
   it("omits layer .d.ts files for a JavaScript project", () => {
     const files = buildFileMap({
-      ...serverlessAnswers,
-      framework: "sam",
+      ...mongooseAnswers,
       layer: true,
       database: "none",
     });
@@ -182,15 +184,14 @@ describe("buildFileMap", () => {
   it("uses src/shared/python for Python layer source", () => {
     const files = buildFileMap(pythonAnswers);
     expect(files["src/shared/python/logger.py"]).toBeDefined();
-    expect(files["src/shared/serverless.yml"]).toBeDefined();
   });
 
-  it("generates serverless configs without root SAM template", () => {
-    const files = buildFileMap(serverlessAnswers);
-    expect(files["template.yaml"]).toBeUndefined();
-    expect(files["gateway/serverless.yml"]).toBeDefined();
-    expect(files["src/functions/auth/serverless.yml"]).toBeDefined();
-    expect(files["src/functions/product/serverless.yml"]).toBeDefined();
+  it("generates a root stack plus one template per application", () => {
+    const files = buildFileMap(mongooseAnswers);
+    expect(files["template.yaml"]).toMatch(/AWS::Serverless::Application/);
+    expect(files["src/functions/auth/template.yaml"]).toBeDefined();
+    expect(files["src/functions/product/template.yaml"]).toBeDefined();
+    expect(Object.keys(files).filter((f) => f.endsWith(".yml"))).toEqual([]);
   });
 
   it("generates tsconfig scoped to src/", () => {
@@ -234,16 +235,19 @@ describe("buildFileMap", () => {
     expect(pkg.scripts["prisma:generate"]).toBeUndefined();
   });
 
-  it("points serverless deploy scripts at the per-service templates under src/", () => {
-    const files = buildFileMap(serverlessAnswers);
+  it("generates SAM build and deploy scripts", () => {
+    const files = buildFileMap(mongooseAnswers);
     const pkg = JSON.parse(files["package.json"]) as {
       scripts: Record<string, string>;
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
     };
 
-    expect(pkg.scripts["deploy:auth"]).toContain("src/functions/auth/serverless.yml");
-    expect(pkg.scripts["deploy:product"]).toContain(
-      "src/functions/product/serverless.yml"
-    );
+    expect(pkg.scripts.build).toBe("sam build");
+    expect(pkg.scripts.deploy).toBe("sam deploy --guided");
+    // sam build runs `npm install --omit=dev`, so esbuild cannot be a devDependency.
+    expect(pkg.dependencies.esbuild).toBeDefined();
+    expect(pkg.devDependencies.serverless).toBeUndefined();
   });
 
   it("generates Python package markers and requirements", () => {
@@ -259,11 +263,6 @@ describe("buildFileMap", () => {
     const files = buildFileMap({ ...fullStackAnswers, memorySize: 2048 });
     expect(files["src/functions/auth/template.yaml"]).toMatch(/MemorySize: 2048/);
     expect(files["src/functions/product/template.yaml"]).toMatch(/MemorySize: 2048/);
-  });
-
-  it("writes memory size into serverless provider config", () => {
-    const files = buildFileMap(serverlessAnswers);
-    expect(files["src/functions/auth/serverless.yml"]).toMatch(/memorySize: 1024/);
   });
 
   it("generates prisma schema when database is prisma", () => {

@@ -4,7 +4,7 @@ export function sharedLogger(runtime: InitAnswers["runtime"]): string {
   if (runtime === "python") {
     return `import logging
 
-logger = logging.getLogger("sless")
+logger = logging.getLogger("slskit")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 `;

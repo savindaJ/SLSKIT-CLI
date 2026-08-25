@@ -30,7 +30,7 @@ describe("resolveProjectRoot", () => {
 
 describe("ensureProjectRoot", () => {
   it("creates a missing directory", () => {
-    const dir = createTempDir("sless-ensure-");
+    const dir = createTempDir("slskit-ensure-");
     const target = path.join(dir, "nested", "project");
 
     ensureProjectRoot(target, false);
@@ -39,13 +39,13 @@ describe("ensureProjectRoot", () => {
   });
 
   it("allows empty existing directory", () => {
-    const dir = createTempDir("sless-empty-");
+    const dir = createTempDir("slskit-empty-");
     expect(() => ensureProjectRoot(dir, false)).not.toThrow();
     removeDir(dir);
   });
 
   it("throws for non-empty directory without force", () => {
-    const dir = createTempDir("sless-nonempty-");
+    const dir = createTempDir("slskit-nonempty-");
     fs.writeFileSync(path.join(dir, "existing.txt"), "data");
 
     expect(() => ensureProjectRoot(dir, false)).toThrow(CliError);
@@ -54,7 +54,7 @@ describe("ensureProjectRoot", () => {
   });
 
   it("allows non-empty directory with force", () => {
-    const dir = createTempDir("sless-force-");
+    const dir = createTempDir("slskit-force-");
     fs.writeFileSync(path.join(dir, "existing.txt"), "data");
     expect(() => ensureProjectRoot(dir, true)).not.toThrow();
     removeDir(dir);
@@ -63,7 +63,7 @@ describe("ensureProjectRoot", () => {
 
 describe("scaffoldProject", () => {
   it("writes generated files for a SAM project", async () => {
-    const dir = createTempDir("sless-scaffold-");
+    const dir = createTempDir("slskit-scaffold-");
 
     const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
 
@@ -76,7 +76,7 @@ describe("scaffoldProject", () => {
   });
 
   it("supports init in current directory with name '.'", async () => {
-    const dir = createTempDir("sless-dot-");
+    const dir = createTempDir("slskit-dot-");
 
     const root = await scaffoldProject({ ...minimalAnswers, name: "." }, dir);
 
@@ -88,7 +88,7 @@ describe("scaffoldProject", () => {
 
 describe("writeFiles credential safety", () => {
   it("never overwrites an existing .env on --force", async () => {
-    const dir = createTempDir("sless-env-");
+    const dir = createTempDir("slskit-env-");
     const root = path.join(dir, "env-app");
     fs.mkdirSync(root, { recursive: true });
     fs.writeFileSync(path.join(root, ".env"), 'DATABASE_URL="postgresql://real:secret@prod/db"\n');

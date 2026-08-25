@@ -1,23 +1,43 @@
-import {
-  LAMBDA_APPS,
-  SRC_DIR,
-  lambdaRuntime,
-  serviceTemplatePath,
+import { SRC_DIR, lambdaRuntime, sameRuntimeFamily, serviceTemplatePath } from "../types.js";
+import type {
+  DatabaseId,
+  InitAnswers,
+  ServiceDef,
+  ServiceFunction,
 } from "../types.js";
-import type { InitAnswers, ServiceDef, ServiceFunction } from "../types.js";
-import { pascal } from "./helpers.js";
+import { dynamoTableName, envParameterName, pascal } from "./helpers.js";
 
-function environmentYaml(answers: InitAnswers, indent: string): string {
-  if (answers.database === "prisma") {
-    return `${indent}Environment:\n${indent}  Variables:\n${indent}    DATABASE_URL: !Ref DatabaseUrl\n`;
+function databaseVariables(database: DatabaseId): string[] {
+  if (database === "prisma") {
+    return ["DATABASE_URL: !Ref DatabaseUrl"];
   }
-  if (answers.database === "mongoose") {
-    return `${indent}Environment:\n${indent}  Variables:\n${indent}    MONGODB_URI: !Ref MongoUri\n`;
+  if (database === "mongoose") {
+    return ["MONGODB_URI: !Ref MongoUri"];
   }
-  if (answers.database === "dynamodb") {
-    return `${indent}Environment:\n${indent}  Variables:\n${indent}    USERS_TABLE: users\n${indent}    PRODUCTS_TABLE: products\n`;
+  if (database === "dynamodb") {
+    return ["USERS_TABLE: users", "PRODUCTS_TABLE: products"];
   }
-  return "";
+  return [];
+}
+
+// Stage variables are wired to parameters rather than literals so one template can
+// serve every stage: the deploy supplies the values as --parameter-overrides.
+function environmentYaml(
+  database: DatabaseId,
+  envKeys: string[],
+  indent: string
+): string {
+  const variables = [
+    ...databaseVariables(database),
+    ...envKeys.map((key) => `${key}: !Ref ${envParameterName(key)}`),
+  ];
+
+  if (variables.length === 0) {
+    return "";
+  }
+
+  const body = variables.map((line) => `${indent}    ${line}`).join("\n");
+  return `${indent}Environment:\n${indent}  Variables:\n${body}\n`;
 }
 
 function databaseParameterNames(answers: InitAnswers): string[] {
@@ -30,7 +50,11 @@ function databaseParameterNames(answers: InitAnswers): string[] {
   return [];
 }
 
-function samParameters(answers: InitAnswers): string {
+function stageParameterNames(envKeys: string[]): string[] {
+  return envKeys.map(envParameterName);
+}
+
+function samParameters(answers: InitAnswers, envKeys: string[]): string {
   const params: string[] = [];
 
   if (answers.database === "prisma") {
@@ -45,6 +69,15 @@ function samParameters(answers: InitAnswers): string {
     Type: String
     Description: MongoDB connection string
     NoEcho: true`);
+  }
+
+  // Every stage variable defaults to empty, so a stage that does not set one can
+  // still deploy from the same template without supplying an override.
+  for (const key of envKeys) {
+    params.push(`  ${envParameterName(key)}:
+    Type: String
+    Default: ""
+    Description: ${key} environment variable`);
   }
 
   if (params.length === 0) {
@@ -94,14 +127,13 @@ function samSharedLayerResource(answers: InitAnswers): string {
 }
 
 function samDynamoResources(service: ServiceDef): string {
-  const table = service.name === "auth" ? "UsersTable" : "ProductsTable";
-  const tableName = service.name === "auth" ? "users" : "products";
+  const { resource, table } = dynamoTableName(service.name);
 
   return `
-  ${table}:
+  ${resource}:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: ${tableName}
+      TableName: ${table}
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: id
@@ -112,15 +144,15 @@ function samDynamoResources(service: ServiceDef): string {
 `;
 }
 
-function samPolicies(answers: InitAnswers, service: ServiceDef): string {
-  if (answers.database !== "dynamodb") {
+function samPolicies(database: DatabaseId, service: ServiceDef): string {
+  if (database !== "dynamodb") {
     return "";
   }
 
-  const table = service.name === "auth" ? "UsersTable" : "ProductsTable";
+  const { resource } = dynamoTableName(service.name);
   return `      Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref ${table}
+            TableName: !Ref ${resource}
 `;
 }
 
@@ -138,33 +170,41 @@ function samHttpEvent(fn: ServiceFunction): string {
 function samFunction(
   answers: InitAnswers,
   service: ServiceDef,
-  fn: ServiceFunction
+  fn: ServiceFunction,
+  envKeys: string[]
 ): string {
+  const fnRuntime = fn.runtime ?? answers.runtime;
+  // A function in a different runtime family than the project can't attach the
+  // project's layer or import its db client, so it runs standalone instead.
+  const sameFamily = sameRuntimeFamily(fnRuntime, answers.runtime);
+  const useLayer = answers.layer && sameFamily;
+  const database: DatabaseId = sameFamily ? answers.database : "none";
+  const memorySize = fn.memorySize ?? answers.memorySize;
+
   const resource = `${pascal(fn.name)}Function`;
-  const env = environmentYaml(answers, "      ");
-  const policies = samPolicies(answers, service);
-  const runtime = lambdaRuntime(answers.runtime);
-  const layers = answers.layer
-    ? `      Layers:\n        - !Ref SharedLayer\n`
-    : "";
+  const env = environmentYaml(database, envKeys, "      ");
+  const policies = samPolicies(database, service);
+  const runtime = lambdaRuntime(fnRuntime);
+  const layers = useLayer ? `      Layers:\n        - !Ref SharedLayer\n` : "";
   const events = answers.apiGateway ? samHttpEvent(fn) : "";
 
   // CodeUri is the project root: SAM stages it and runs npm install / pip install there,
   // so package.json and requirements.txt must be inside it.
-  if (answers.runtime === "python") {
+  if (fnRuntime === "python") {
     return `  ${resource}:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../../../
       Handler: ${SRC_DIR}.functions.${service.name}.${fn.name}.handler.handler
       Runtime: ${runtime}
+      MemorySize: ${memorySize}
 ${env}${policies}${layers}${events}`;
   }
 
-  const entryExt = answers.runtime === "typescript" ? "ts" : "js";
+  const entryExt = fnRuntime === "typescript" ? "ts" : "js";
   const entry = `${SRC_DIR}/functions/${service.name}/${fn.name}/handler.${entryExt}`;
   const handlerPath = `${entry.replace(/\.(ts|js)$/, "")}.handler`;
-  const externals = answers.layer
+  const externals = useLayer
     ? `        External:
           - "/opt/nodejs/*"
 `
@@ -176,6 +216,7 @@ ${env}${policies}${layers}${events}`;
       CodeUri: ../../../
       Handler: ${handlerPath}
       Runtime: ${runtime}
+      MemorySize: ${memorySize}
 ${env}${policies}${layers}${events}    Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -192,12 +233,13 @@ ${externals}`;
 // SAM can resolve every reference locally (a cross-stack ApiId breaks sam build).
 export function samServiceTemplate(
   answers: InitAnswers,
-  service: ServiceDef
+  service: ServiceDef,
+  envKeys: string[] = []
 ): string {
   const httpApi = answers.apiGateway ? samHttpApiResource() : "";
   const sharedLayer = answers.layer ? samSharedLayerResource(answers) : "";
   const functions = service.functions
-    .map((fn) => samFunction(answers, service, fn))
+    .map((fn) => samFunction(answers, service, fn, envKeys))
     .join("\n");
   const dynamo = answers.database === "dynamodb" ? samDynamoResources(service) : "";
 
@@ -214,7 +256,7 @@ Outputs:
 Transform: AWS::Serverless-2016-10-31
 Description: ${service.name} service
 
-${samParameters(answers)}Globals:
+${samParameters(answers, envKeys)}Globals:
   Function:
     Timeout: 10
     MemorySize: ${answers.memorySize}
@@ -223,8 +265,15 @@ Resources:
 ${httpApi}${sharedLayer}${functions}${dynamo}${outputs}`;
 }
 
-export function samRootTemplate(answers: InitAnswers): string {
-  const parameterNames = databaseParameterNames(answers);
+export function samRootTemplate(
+  answers: InitAnswers,
+  apps: ServiceDef[],
+  envKeys: string[] = []
+): string {
+  const parameterNames = [
+    ...databaseParameterNames(answers),
+    ...stageParameterNames(envKeys),
+  ];
   const parametersBlock =
     parameterNames.length > 0
       ? `      Parameters:\n${parameterNames
@@ -232,23 +281,27 @@ export function samRootTemplate(answers: InitAnswers): string {
           .join("\n")}\n`
       : "";
 
-  const services = LAMBDA_APPS.map((service) => {
-    const resource = `${pascal(service.name)}Stack`;
-    return `  ${resource}:
+  const services = apps
+    .map((service) => {
+      const resource = `${pascal(service.name)}Stack`;
+      return `  ${resource}:
     Type: AWS::Serverless::Application
     Properties:
-      Location: ${serviceTemplatePath("sam", service.name)}
+      Location: ${serviceTemplatePath(service.name)}
 ${parametersBlock}`;
-  }).join("\n");
+    })
+    .join("\n");
 
   const outputs = answers.apiGateway
     ? `
 Outputs:
-${LAMBDA_APPS.map(
-  (service) => `  ${pascal(service.name)}ApiUrl:
+${apps
+  .map(
+    (service) => `  ${pascal(service.name)}ApiUrl:
     Description: HTTP API URL for the ${service.name} service
     Value: !GetAtt ${pascal(service.name)}Stack.Outputs.HttpApiUrl`
-).join("\n")}
+  )
+  .join("\n")}
 `
     : "";
 
@@ -256,6 +309,6 @@ ${LAMBDA_APPS.map(
 Transform: AWS::Serverless-2016-10-31
 Description: ${answers.name} root stack
 
-${samParameters(answers)}Resources:
+${samParameters(answers, envKeys)}Resources:
 ${services}${outputs}`;
 }

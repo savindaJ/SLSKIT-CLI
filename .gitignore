@@ -4,3 +4,7 @@ dist/
 .DS_Store
 .env
 .env.*
+
+test-app/
+# stray scratch file (not a build directory)
+build

@@ -1,7 +1,6 @@
 import { CliError } from "../../core/errors.js";
 import type {
   DatabaseId,
-  FrameworkId,
   InitAnswers,
   InitOptions,
   MemorySize,
@@ -9,7 +8,7 @@ import type {
 } from "./types.js";
 import { MEMORY_SIZES } from "./types.js";
 
-const RUNTIME_ALIASES: Record<string, RuntimeId> = {
+export const RUNTIME_ALIASES: Record<string, RuntimeId> = {
   typescript: "typescript",
   ts: "typescript",
   "node-ts": "typescript",
@@ -20,15 +19,6 @@ const RUNTIME_ALIASES: Record<string, RuntimeId> = {
   python: "python",
   py: "python",
   python3: "python",
-};
-
-const FRAMEWORK_ALIASES: Record<string, FrameworkId> = {
-  sam: "sam",
-  "aws-sam": "sam",
-  "template.yaml": "sam",
-  serverless: "serverless",
-  sls: "serverless",
-  "serverless.yml": "serverless",
 };
 
 const DATABASE_ALIASES: Record<string, DatabaseId> = {
@@ -44,7 +34,7 @@ const DATABASE_ALIASES: Record<string, DatabaseId> = {
   documentclient: "dynamodb",
 };
 
-function parseAlias<T extends string>(
+export function parseAlias<T extends string>(
   value: string | undefined,
   aliases: Record<string, T>,
   label: string
@@ -86,7 +76,7 @@ function parseYesNo(
   throw new CliError(`${label} must be yes or no.`);
 }
 
-function parseMemory(value: string | number | undefined): MemorySize | undefined {
+export function parseMemory(value: string | number | undefined): MemorySize | undefined {
   if (value === undefined || value === "") {
     return undefined;
   }
@@ -101,7 +91,7 @@ function parseMemory(value: string | number | undefined): MemorySize | undefined
   return parsed as MemorySize;
 }
 
-function memoryLabel(size: MemorySize): string {
+export function memoryLabel(size: MemorySize): string {
   if (size % 1024 === 0) {
     return `${size} MB (${size / 1024} GB)`;
   }
@@ -112,7 +102,6 @@ function memoryLabel(size: MemorySize): string {
 export async function collectAnswers(options: InitOptions): Promise<InitAnswers> {
   let name = options.name?.trim();
   let runtime = parseAlias(options.runtime, RUNTIME_ALIASES, "runtime");
-  let framework = parseAlias(options.framework, FRAMEWORK_ALIASES, "framework");
   let database = parseAlias(options.database, DATABASE_ALIASES, "database");
   let apiGateway = parseYesNo(options.apiGateway, "--api-gateway");
   let layer = parseYesNo(options.layer, "--layer");
@@ -121,7 +110,6 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
   const needsPrompt =
     !name ||
     !runtime ||
-    !framework ||
     !database ||
     apiGateway === undefined ||
     layer === undefined ||
@@ -129,7 +117,7 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
 
   if (needsPrompt && !process.stdin.isTTY) {
     throw new CliError(
-      "Non-interactive init needs --name, --runtime, --framework, --database, --api-gateway, --layer, and --memory."
+      "Non-interactive init needs --name, --runtime, --database, --api-gateway, --layer, and --memory."
     );
   }
 
@@ -148,14 +136,6 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
         { name: "TypeScript (Node.js)", value: "typescript" },
         { name: "JavaScript (Node.js)", value: "javascript" },
         { name: "Python", value: "python" },
-      ],
-    });
-
-    framework ??= await select<FrameworkId>({
-      message: "Deployment Framework:",
-      choices: [
-        { name: "AWS SAM (template.yaml)", value: "sam" },
-        { name: "Serverless Framework (serverless.yml)", value: "serverless" },
       ],
     });
 
@@ -196,7 +176,6 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
   return {
     name: projectName,
     runtime: runtime as RuntimeId,
-    framework: framework as FrameworkId,
     database: database as DatabaseId,
     apiGateway: Boolean(apiGateway),
     layer: Boolean(layer),

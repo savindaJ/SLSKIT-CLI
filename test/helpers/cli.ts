@@ -41,7 +41,7 @@ export async function runProgram(
     if (args.length === 0) {
       program.outputHelp();
     } else {
-      await program.parseAsync(["node", "sless", ...args], { from: "node" });
+      await program.parseAsync(["node", "slskit", ...args], { from: "node" });
     }
   } catch (error) {
     if (error instanceof CommanderError) {
@@ -70,7 +70,7 @@ export async function runProgram(
   };
 }
 
-export function createTempDir(prefix = "sless-test-"): string {
+export function createTempDir(prefix = "slskit-test-"): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
@@ -102,8 +102,6 @@ export function listFiles(root: string): string[] {
 export const BASE_INIT_FLAGS = [
   "--runtime",
   "javascript",
-  "--framework",
-  "sam",
   "--database",
   "none",
   "--api-gateway",

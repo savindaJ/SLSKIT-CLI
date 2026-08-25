@@ -8,7 +8,7 @@ export function readManifest(cwd: string): SlessManifest {
 
   if (!fs.existsSync(manifestPath)) {
     throw new CliError(
-      `No sless.json found in ${cwd}. Run "sless init" first, or run "sless run" from your project root.`
+      `No sless.json found in ${cwd}. Run "slskit init" first, or run "slskit run" from your project root.`
     );
   }
 
@@ -16,7 +16,7 @@ export function readManifest(cwd: string): SlessManifest {
 
   if (manifest.framework?.id !== "sam") {
     throw new CliError(
-      `"sless run" currently supports SAM projects only (this project uses "${manifest.framework?.id ?? "unknown"}").`
+      `"slskit run" supports AWS SAM projects only (this project uses "${manifest.framework?.id ?? "unknown"}").`
     );
   }
 

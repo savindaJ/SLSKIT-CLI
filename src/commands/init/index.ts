@@ -6,10 +6,9 @@ import type { InitOptions } from "./types.js";
 export function registerInitCommand(program: Command): void {
   program
     .command("init")
-    .description("Scaffold a multi-service serverless project")
+    .description("Scaffold a multi-service AWS SAM project")
     .argument("[name]", "Project name (example: my-lambda-app)")
     .option("-r, --runtime <runtime>", "typescript | javascript | python")
-    .option("--framework <framework>", "sam | serverless")
     .option("--database <database>", "none | prisma | mongoose | dynamodb")
     .option("--api-gateway <yes|no>", "Attach every function to a single HTTP API")
     .option("--layer <yes|no>", "Use shared/ as a common Lambda layer")
@@ -23,7 +22,6 @@ export function registerInitCommand(program: Command): void {
         initAction({
           name: name ?? options.name,
           runtime: options.runtime,
-          framework: options.framework,
           database: options.database,
           apiGateway: options.apiGateway,
           layer: options.layer,
