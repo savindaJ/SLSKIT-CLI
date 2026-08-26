@@ -113,3 +113,52 @@ export function getCallerIdentity(
     return { error: "Could not parse the response from sts get-caller-identity." };
   }
 }
+
+export interface CredentialWriteResult {
+  ok: boolean;
+  error?: string;
+}
+
+// Credentials are handed to the AWS CLI so they land in ~/.aws/credentials in the
+// format AWS expects — never in the project directory, and never in sless.json.
+// Deliberately runs without a shell so the secret is not exposed to shell parsing.
+export function setProfileCredentials(
+  profile: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  region?: string
+): CredentialWriteResult {
+  const entries: [string, string][] = [
+    ["aws_access_key_id", accessKeyId],
+    ["aws_secret_access_key", secretAccessKey],
+  ];
+
+  if (region) {
+    entries.push(["region", region]);
+  }
+
+  for (const [key, value] of entries) {
+    const result = spawnSync(
+      "aws",
+      ["configure", "set", key, value, "--profile", profile],
+      { encoding: "utf8" }
+    );
+
+    if (result.error) {
+      return { ok: false, error: result.error.message };
+    }
+
+    if (result.status !== 0) {
+      return {
+        ok: false,
+        error: result.stderr?.trim() || `aws configure set ${key} exited with ${result.status}`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+export function credentialsFilePath(): string {
+  return process.env.AWS_SHARED_CREDENTIALS_FILE ?? path.join(awsConfigDir(), "credentials");
+}

@@ -133,8 +133,23 @@ export function samBuild(cwd: string): void {
   }
 }
 
-export function samLocalStartApi(cwd: string, port: number): void {
-  logger.info(`\n> sam local start-api --port ${port}`);
+export function samLocalStartApi(
+  cwd: string,
+  port: number,
+  parameterOverrides: string[] = []
+): void {
+  const overrideArgs =
+    parameterOverrides.length > 0
+      ? ["--parameter-overrides", parameterOverrides.join(" ")]
+      : [];
+
+  // Values are deliberately not logged: overrides carry secrets.
+  const overrideNote =
+    parameterOverrides.length > 0
+      ? ` --parameter-overrides (${parameterOverrides.length} value${parameterOverrides.length === 1 ? "" : "s"})`
+      : "";
+
+  logger.info(`\n> sam local start-api --port ${port}${overrideNote}`);
   logger.info(
     `Every application's routes are served from one local API at http://127.0.0.1:${port}`
   );
@@ -142,7 +157,7 @@ export function samLocalStartApi(cwd: string, port: number): void {
 
   const result = spawnSync(
     "sam",
-    ["local", "start-api", "--port", String(port)],
+    ["local", "start-api", "--port", String(port), ...overrideArgs],
     { cwd, stdio: "inherit", shell: USE_SHELL }
   );
 

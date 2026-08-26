@@ -1,4 +1,8 @@
 import {
+  DEFAULT_ENVIRONMENT,
+  stackNameFor,
+} from "../../core/environments.js";
+import {
   INFRA_FILE,
   SRC_DIR,
   handlerFileName,
@@ -147,6 +151,14 @@ export function buildSlessManifest(
           attachedTo: layerAttachedTo,
         }
       : { enabled: false, path: `${SRC_DIR}/shared` },
+    environments: {
+      default: DEFAULT_ENVIRONMENT,
+      list: {
+        [DEFAULT_ENVIRONMENT]: {
+          stackName: stackNameFor(answers.name, DEFAULT_ENVIRONMENT),
+        },
+      },
+    },
     applications,
     services,
     structure: {

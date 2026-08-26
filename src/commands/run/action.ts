@@ -1,5 +1,11 @@
 import { CliError } from "../../core/errors.js";
 import { logger } from "../../core/logger.js";
+import {
+  APP_ENVIRONMENT_KEY,
+  readManifest as readProjectManifest,
+  resolveEnvironmentName,
+} from "../../core/environments.js";
+import { parameterOverrides, toCliArguments } from "../env/parameters.js";
 import { readManifest } from "./manifest.js";
 import { ensureSamCliInstalled, samBuild, samLocalStartApi } from "./sam-cli.js";
 import type { RunOptions } from "./types.js";
@@ -22,7 +28,12 @@ function parsePort(value: RunOptions["port"]): number {
 export async function runAction(options: RunOptions): Promise<void> {
   const cwd = process.cwd();
   const manifest = readManifest(cwd);
+  const project = readProjectManifest(cwd, "slskit run");
+  const environment = resolveEnvironmentName(project, options.env);
   const port = parsePort(options.port);
+
+  // Resolved before sam runs so a missing secret fails fast rather than after a build.
+  const overrides = toCliArguments(parameterOverrides(cwd, project, environment));
 
   await ensureSamCliInstalled();
 
@@ -31,5 +42,6 @@ export async function runAction(options: RunOptions): Promise<void> {
   }
 
   logger.info(`\nRunning "${manifest.name}" locally on a single API Gateway port.`);
-  samLocalStartApi(cwd, port);
+  logger.info(`  ${APP_ENVIRONMENT_KEY}=${environment}`);
+  samLocalStartApi(cwd, port, overrides);
 }

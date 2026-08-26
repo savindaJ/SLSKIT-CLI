@@ -1,14 +1,25 @@
+export interface EnvAddOptions {
+  profile?: string;
+  region?: string;
+  stackName?: string;
+  skipVerify?: boolean;
+}
+
+export interface EnvRemoveOptions {
+  yes?: boolean;
+}
+
 export interface EnvSetOptions {
-  stage?: string;
+  env?: string;
   secret?: boolean;
   ssm?: string;
 }
 
-export interface EnvListOptions {
-  stage?: string;
-  showSecrets?: boolean;
+export interface EnvUnsetOptions {
+  env?: string;
 }
 
-export interface EnvUnsetOptions {
-  stage?: string;
+export interface EnvVarsOptions {
+  env?: string;
+  showSecrets?: boolean;
 }

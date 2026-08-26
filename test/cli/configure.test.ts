@@ -165,9 +165,9 @@ describe("slskit configure command", () => {
     expect(infoText()).toMatch(/Verified AWS credentials/);
     expect(infoText()).toMatch(/123456789012/);
 
-    expect(readManifest(root).deployment).toEqual({
-      defaultStage: "dev",
-      stages: {
+    expect(readManifest(root).environments).toEqual({
+      default: "dev",
+      list: {
         dev: { region: "us-east-1", profile: "work", stackName: "demo-app-dev" },
       },
     });
@@ -186,7 +186,10 @@ describe("slskit configure command", () => {
     expect(result.status).not.toBe(0);
     expect(errorText()).toMatch(/Could not verify AWS credentials/);
     expect(errorText()).toMatch(/ExpiredToken/);
-    expect(readManifest(root).deployment).toBeUndefined();
+    // init seeds "dev", so the guarantee is that a failed verify adds nothing to it.
+    expect(readManifest(root).environments.list.dev).toEqual({
+      stackName: "demo-app-dev",
+    });
     removeDir(dir);
   });
 
@@ -201,7 +204,7 @@ describe("slskit configure command", () => {
 
     expect(result.status).toBe(0);
     expect(infoText()).toMatch(/Skipped the credential check/);
-    expect(readManifest(root).deployment.stages.dev.profile).toBe("work");
+    expect(readManifest(root).environments.list.dev.profile).toBe("work");
     removeDir(dir);
   });
 
@@ -214,26 +217,25 @@ describe("slskit configure command", () => {
 
     expect(result.status).toBe(0);
     expect(infoText()).toMatch(/credentials: the environment/);
-    expect(readManifest(root).deployment.stages.dev).toEqual({
+    expect(readManifest(root).environments.list.dev).toEqual({
       region: "eu-west-1",
       stackName: "demo-app-dev",
     });
     removeDir(dir);
   });
 
-  it("configures a named stage with its own stack name", async () => {
-    const { dir, root } = await scaffold("slskit-cfg-cli-stage-");
+  it("configures a named environment with its own stack name", async () => {
+    const { dir, root } = await scaffold("slskit-cfg-cli-env-name-");
     const result = await runProgram(
-      ["configure", "--stage", "prod", "--profile", "prod-admin", "--region", "eu-west-2"],
+      ["configure", "--env", "production", "--profile", "prod-admin", "--region", "eu-west-2"],
       { cwd: root }
     );
 
     expect(result.status).toBe(0);
-    expect(readManifest(root).deployment).toEqual({
-      defaultStage: "prod",
-      stages: {
-        prod: { region: "eu-west-2", profile: "prod-admin", stackName: "demo-app-prod" },
-      },
+    expect(readManifest(root).environments.list.production).toEqual({
+      region: "eu-west-2",
+      profile: "prod-admin",
+      stackName: "demo-app-production",
     });
     removeDir(dir);
   });
@@ -249,7 +251,7 @@ describe("slskit configure command", () => {
 
     expect(result.status).toBe(0);
     expect(infoText()).toMatch(/AWS CLI was not found/);
-    expect(readManifest(root).deployment.stages.dev.region).toBe("us-east-1");
+    expect(readManifest(root).environments.list.dev.region).toBe("us-east-1");
     removeDir(dir);
   });
 

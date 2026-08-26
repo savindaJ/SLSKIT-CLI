@@ -1,3 +1,4 @@
+import { APP_ENVIRONMENT_KEY } from "../../../core/environments.js";
 import { INFRA_FILE, SRC_DIR, sourceExt } from "../types.js";
 import type { InitAnswers } from "../types.js";
 import { loggerExt } from "./helpers.js";
@@ -210,6 +211,21 @@ export function envExample(database: InitAnswers["database"]): string | undefine
     return `USERS_TABLE="users"\nPRODUCTS_TABLE="products"\n`;
   }
   return undefined;
+}
+
+// Matches the format "slskit env set" writes, so the two never fight over the file.
+export function environmentDotenv(
+  environment: string,
+  database: InitAnswers["database"]
+): string {
+  const lines = [`${APP_ENVIRONMENT_KEY}=${environment}`];
+
+  const dbExample = envExample(database);
+  if (dbExample) {
+    lines.push(...dbExample.trimEnd().split("\n"));
+  }
+
+  return `# Values for the "${environment}" environment. Never commit this file.\n${lines.join("\n")}\n`;
 }
 
 export function requirementsTxt(answers: InitAnswers): string {

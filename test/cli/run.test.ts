@@ -90,7 +90,7 @@ describe("slskit run command", () => {
     const calls = callArgs();
     expect(calls).toContain("--version");
     expect(calls).toContain("build");
-    expect(calls).toContain("local start-api --port 4000");
+    expect(calls.join("\n")).toMatch(/local start-api --port 4000/);
     expect(cliLogs.infos.join("\n")).toMatch(/one local API/);
     removeDir(dir);
   });
@@ -110,6 +110,85 @@ describe("slskit run command", () => {
 
     expect(result.status).toBe(0);
     expect(callArgs()).not.toContain("build");
+    removeDir(dir);
+  });
+
+  it("passes the default environment to sam as a parameter override", async () => {
+    const dir = createTempDir("slskit-run-env-default-");
+    const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
+
+    await runProgram(["run"], { cwd: root });
+
+    expect(callArgs().join("\n")).toMatch(/--parameter-overrides AppEnvironment=dev/);
+    expect(cliLogs.infos.join("\n")).toMatch(/APP_ENVIRONMENT=dev/);
+    removeDir(dir);
+  });
+
+  it("runs with the environment named as a positional argument", async () => {
+    const dir = createTempDir("slskit-run-env-positional-");
+    const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
+    await runProgram(
+      ["env", "add", "staging", "--profile", "p", "--region", "eu-west-1", "--skip-verify"],
+      { cwd: root }
+    );
+
+    mockSpawnSync.mockClear();
+    await runProgram(["run", "staging"], { cwd: root });
+
+    expect(callArgs().join("\n")).toMatch(/AppEnvironment=staging/);
+    expect(cliLogs.infos.join("\n")).toMatch(/APP_ENVIRONMENT=staging/);
+    removeDir(dir);
+  });
+
+  it("accepts --env as well as the positional form", async () => {
+    const dir = createTempDir("slskit-run-env-flag-");
+    const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
+    await runProgram(
+      ["env", "add", "staging", "--profile", "p", "--region", "eu-west-1", "--skip-verify"],
+      { cwd: root }
+    );
+
+    mockSpawnSync.mockClear();
+    await runProgram(["run", "--env", "staging"], { cwd: root });
+
+    expect(callArgs().join("\n")).toMatch(/AppEnvironment=staging/);
+    removeDir(dir);
+  });
+
+  it("carries an environment's variables into the local run", async () => {
+    const dir = createTempDir("slskit-run-env-vars-");
+    const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
+    await runProgram(["env", "set", "LOG_LEVEL=debug"], { cwd: root });
+
+    mockSpawnSync.mockClear();
+    await runProgram(["run"], { cwd: root });
+
+    expect(callArgs().join("\n")).toMatch(/EnvLogLevel=debug/);
+    removeDir(dir);
+  });
+
+  it("refuses an environment that does not exist", async () => {
+    const dir = createTempDir("slskit-run-env-missing-");
+    const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
+
+    const result = await runProgram(["run", "production"], { cwd: root });
+
+    expect(result.status).not.toBe(0);
+    expect(cliLogs.errors.join("\n")).toMatch(/Environment "production" was not found/);
+    removeDir(dir);
+  });
+
+  it("refuses to start when a declared secret is missing from the dotenv file", async () => {
+    const dir = createTempDir("slskit-run-env-secret-");
+    const root = await scaffoldProject({ ...minimalAnswers, name: "demo-app" }, dir);
+    await runProgram(["env", "set", "API_KEY=temp", "--secret"], { cwd: root });
+    fs.writeFileSync(path.join(root, ".env.dev"), "APP_ENVIRONMENT=dev\n");
+
+    mockSpawnSync.mockClear();
+    const result = await runProgram(["run"], { cwd: root });
+
+    expect(result.status).not.toBe(0);
+    expect(cliLogs.errors.join("\n")).toMatch(/marked secret .* but is missing/);
     removeDir(dir);
   });
 });

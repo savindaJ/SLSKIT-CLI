@@ -1,3 +1,8 @@
+import {
+  APP_ENVIRONMENT_KEY,
+  APP_ENVIRONMENT_PARAM,
+  DEFAULT_ENVIRONMENT,
+} from "../../../core/environments.js";
 import { SRC_DIR, lambdaRuntime, sameRuntimeFamily, serviceTemplatePath } from "../types.js";
 import type {
   DatabaseId,
@@ -28,13 +33,10 @@ function environmentYaml(
   indent: string
 ): string {
   const variables = [
+    `${APP_ENVIRONMENT_KEY}: !Ref ${APP_ENVIRONMENT_PARAM}`,
     ...databaseVariables(database),
     ...envKeys.map((key) => `${key}: !Ref ${envParameterName(key)}`),
   ];
-
-  if (variables.length === 0) {
-    return "";
-  }
 
   const body = variables.map((line) => `${indent}    ${line}`).join("\n");
   return `${indent}Environment:\n${indent}  Variables:\n${body}\n`;
@@ -54,8 +56,15 @@ function stageParameterNames(envKeys: string[]): string[] {
   return envKeys.map(envParameterName);
 }
 
+function appEnvironmentParameter(): string {
+  return `  ${APP_ENVIRONMENT_PARAM}:
+    Type: String
+    Default: ${DEFAULT_ENVIRONMENT}
+    Description: Deployment environment; every stage-scoped resource name is built from it`;
+}
+
 function samParameters(answers: InitAnswers, envKeys: string[]): string {
-  const params: string[] = [];
+  const params: string[] = [appEnvironmentParameter()];
 
   if (answers.database === "prisma") {
     params.push(`  DatabaseUrl:
@@ -78,10 +87,6 @@ function samParameters(answers: InitAnswers, envKeys: string[]): string {
     Type: String
     Default: ""
     Description: ${key} environment variable`);
-  }
-
-  if (params.length === 0) {
-    return "";
   }
 
   return `Parameters:\n${params.join("\n")}\n\n`;
@@ -114,7 +119,7 @@ function samSharedLayerResource(answers: InitAnswers): string {
   return `  SharedLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      LayerName: !Sub \${AWS::StackName}-shared
+      LayerName: !Sub "\${AWS::StackName}-shared"
       Description: Shared utilities attached to every function in this service
       ContentUri: ${contentUri}
       CompatibleRuntimes:
@@ -167,6 +172,10 @@ function samHttpEvent(fn: ServiceFunction): string {
 `;
 }
 
+function samFunctionName(answers: InitAnswers, fn: ServiceFunction): string {
+  return `      FunctionName: !Sub "${answers.name}-\${${APP_ENVIRONMENT_PARAM}}-${fn.name}"\n`;
+}
+
 function samFunction(
   answers: InitAnswers,
   service: ServiceDef,
@@ -182,6 +191,7 @@ function samFunction(
   const memorySize = fn.memorySize ?? answers.memorySize;
 
   const resource = `${pascal(fn.name)}Function`;
+  const functionName = samFunctionName(answers, fn);
   const env = environmentYaml(database, envKeys, "      ");
   const policies = samPolicies(database, service);
   const runtime = lambdaRuntime(fnRuntime);
@@ -194,7 +204,7 @@ function samFunction(
     return `  ${resource}:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../../../
+${functionName}      CodeUri: ../../../
       Handler: ${SRC_DIR}.functions.${service.name}.${fn.name}.handler.handler
       Runtime: ${runtime}
       MemorySize: ${memorySize}
@@ -213,7 +223,7 @@ ${env}${policies}${layers}${events}`;
   return `  ${resource}:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../../../
+${functionName}      CodeUri: ../../../
       Handler: ${handlerPath}
       Runtime: ${runtime}
       MemorySize: ${memorySize}
@@ -271,6 +281,7 @@ export function samRootTemplate(
   envKeys: string[] = []
 ): string {
   const parameterNames = [
+    APP_ENVIRONMENT_PARAM,
     ...databaseParameterNames(answers),
     ...stageParameterNames(envKeys),
   ];

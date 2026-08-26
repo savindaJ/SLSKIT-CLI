@@ -1,3 +1,4 @@
+import { DEFAULT_ENVIRONMENT } from "../../core/environments.js";
 import { buildSlessManifest } from "./manifest.js";
 import {
   LAMBDA_APPS,
@@ -10,6 +11,7 @@ import {
 import type { InitAnswers, ServiceFunction } from "./types.js";
 import { loggerExt } from "./templates/helpers.js";
 import {
+  environmentDotenv,
   envExample,
   gitignore,
   packageJson,
@@ -57,6 +59,13 @@ export function buildFileMap(
     "README.md": readme(answers),
     "package.json": packageJson(answers),
   };
+
+  // The environment file is always generated; .env stays for tooling that reads it
+  // directly (Prisma), and only exists when there is a database to configure.
+  files[`.env.${DEFAULT_ENVIRONMENT}`] = environmentDotenv(
+    DEFAULT_ENVIRONMENT,
+    answers.database
+  );
 
   const env = envExample(answers.database);
   if (env) {

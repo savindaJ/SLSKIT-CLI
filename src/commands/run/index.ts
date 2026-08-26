@@ -9,7 +9,17 @@ export function registerRunCommand(program: Command): void {
     .description(
       "Run the generated SAM project locally (every application served from one API Gateway port)"
     )
+    .argument(
+      "[environment]",
+      "Environment to run with (example: dev, staging) — defaults to the default environment"
+    )
     .option("-p, --port <port>", "Local API Gateway port", "3000")
     .option("--no-build", 'Skip "sam build" before starting the local API')
-    .action((options: RunOptions) => runCommand(() => runAction(options)));
+    .option(
+      "-e, --env <name>",
+      "Environment whose variables to run with (default: the default environment)"
+    )
+    .action((environment: string | undefined, options: RunOptions) =>
+      runCommand(() => runAction({ ...options, env: environment ?? options.env }))
+    );
 }

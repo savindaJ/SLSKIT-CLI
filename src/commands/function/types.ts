@@ -1,4 +1,4 @@
-import type { DeploymentConfig } from "../../core/manifest.js";
+import type { EnvironmentsConfig } from "../../core/environments.js";
 import type { DatabaseId, MemorySize, RuntimeId } from "../init/types.js";
 
 export interface FunctionOptions {
@@ -32,5 +32,5 @@ export interface ProjectManifest {
   functions: { memorySize: MemorySize };
   applications: ManifestApplication[];
   structure: { files: string[] };
-  deployment?: DeploymentConfig;
+  environments?: EnvironmentsConfig;
 }

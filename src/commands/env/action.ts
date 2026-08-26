@@ -1,238 +1,357 @@
 import { CliError } from "../../core/errors.js";
 import { logger } from "../../core/logger.js";
 import {
+  APP_ENVIRONMENT_KEY,
+  assertFunctionNameFits,
   envVarSource,
+  environmentNames,
+  parseEnvironmentName,
   readManifest,
-  requireStage,
-  resolveStageName,
+  requireEnvironment,
+  resolveEnvironmentName,
+  stackNameFor,
   writeManifest,
-} from "../../core/manifest.js";
-import type { EnvVarDef, ProjectManifest, StageConfig } from "../../core/manifest.js";
-import { envParameterName } from "../init/templates/helpers.js";
+} from "../../core/environments.js";
+import type { EnvVarDef, ProjectManifest } from "../../core/environments.js";
+import { configureAction } from "../configure/action.js";
 import {
   dotenvFileName,
   ensureDotenvIgnored,
   readDotenv,
   setDotenvValue,
   unsetDotenvValue,
+  writeDotenv,
 } from "./dotenv.js";
 import { regenerateTemplates } from "./templates.js";
-import type { EnvListOptions, EnvSetOptions, EnvUnsetOptions } from "./types.js";
+import type {
+  EnvAddOptions,
+  EnvRemoveOptions,
+  EnvSetOptions,
+  EnvUnsetOptions,
+  EnvVarsOptions,
+} from "./types.js";
 
 const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-export function parseKey(value: string): string {
-  const key = value.trim();
-  if (!KEY_PATTERN.test(key)) {
-    throw new CliError(
-      `Invalid variable name "${value}". Use letters, digits and underscores, starting with a letter or underscore.`
-    );
+function requireName(name: string | undefined): string {
+  const parsed = parseEnvironmentName(name);
+  if (!parsed) {
+    throw new CliError("An environment name is required.");
   }
-  return key;
+  return parsed;
 }
 
-// LOG_LEVEL and LOG__LEVEL would both become EnvLogLevel, which CloudFormation
-// would reject as a duplicate parameter. Catch it here rather than at deploy.
-function assertNoParameterCollision(
-  manifest: ProjectManifest,
-  key: string
-): void {
-  const target = envParameterName(key);
+function parseKey(key: string): string {
+  const trimmed = key.trim();
 
-  for (const stage of Object.values(manifest.deployment?.stages ?? {})) {
-    for (const existing of Object.keys(stage.env ?? {})) {
-      if (existing !== key && envParameterName(existing) === target) {
-        throw new CliError(
-          `"${key}" and "${existing}" both map to the CloudFormation parameter ${target}. Rename one of them.`
-        );
-      }
+  if (!KEY_PATTERN.test(trimmed)) {
+    throw new CliError(
+      `Invalid variable name "${key}". Use letters, digits and underscores, starting with a letter or underscore.`
+    );
+  }
+
+  if (trimmed === APP_ENVIRONMENT_KEY) {
+    throw new CliError(
+      `${APP_ENVIRONMENT_KEY} is managed by slskit and always equals the environment name. Use "slskit env add <name>" to create another environment instead.`
+    );
+  }
+
+  return trimmed;
+}
+
+// Every function's physical name is <project>-<environment>-<function>, so a long
+// environment name can push it past Lambda's limit. Caught before anything is written.
+function assertNamesFit(manifest: ProjectManifest, environment: string): void {
+  const applications =
+    (manifest.applications as { functions?: { name: string }[] }[] | undefined) ?? [];
+
+  for (const app of applications) {
+    for (const fn of app.functions ?? []) {
+      assertFunctionNameFits(manifest.name, environment, fn.name);
     }
   }
 }
 
-function writeStageEnv(
-  cwd: string,
-  manifest: ProjectManifest,
-  stage: string,
-  env: Record<string, EnvVarDef>
-): void {
-  const config = requireStage(manifest, stage);
-  const next: StageConfig = { ...config };
+export async function envListAction(): Promise<void> {
+  const cwd = process.cwd();
+  const manifest = readManifest(cwd, "slskit env list");
+  const names = environmentNames(manifest);
 
-  if (Object.keys(env).length > 0) {
-    next.env = env;
-  } else {
-    delete next.env;
+  if (names.length === 0) {
+    logger.info('\nThis project has no environments yet. Add one with "slskit env add dev".');
+    return;
   }
+
+  const active = manifest.environments?.default;
+  logger.info(`\nEnvironments for "${manifest.name}":\n`);
+
+  for (const name of names) {
+    const config = requireEnvironment(manifest, name);
+    const marker = name === active ? "*" : " ";
+    const count = Object.keys(config.variables ?? {}).length;
+
+    logger.info(`${marker} ${name}`);
+    logger.info(`    ${APP_ENVIRONMENT_KEY}: ${name}`);
+    logger.info(`    stack:     ${config.stackName}`);
+    logger.info(`    region:    ${config.region ?? "(not configured)"}`);
+    logger.info(`    profile:   ${config.profile ?? "(environment)"}`);
+    logger.info(`    variables: ${count}`);
+  }
+
+  logger.info("\n* default environment");
+}
+
+// An environment is a deploy target plus a name, so creating one runs the same
+// credential flow as configure rather than duplicating it.
+export async function envAddAction(
+  name: string,
+  options: EnvAddOptions
+): Promise<void> {
+  const cwd = process.cwd();
+  const manifest = readManifest(cwd, "slskit env add");
+  const environment = requireName(name);
+
+  if (manifest.environments?.list?.[environment]) {
+    throw new CliError(
+      `Environment "${environment}" already exists. Use "slskit configure --env ${environment}" to change it.`
+    );
+  }
+
+  assertNamesFit(manifest, environment);
+
+  await configureAction({ ...options, env: environment });
+}
+
+export async function envUseAction(name: string): Promise<void> {
+  const cwd = process.cwd();
+  const manifest = readManifest(cwd, "slskit env use");
+  const environment = requireName(name);
+
+  requireEnvironment(manifest, environment);
 
   writeManifest(cwd, {
     ...manifest,
-    deployment: {
-      defaultStage: manifest.deployment?.defaultStage ?? stage,
-      stages: { ...manifest.deployment?.stages, [stage]: next },
+    environments: {
+      default: environment,
+      list: manifest.environments?.list ?? {},
     },
   });
+
+  logger.info(`\nDefault environment is now "${environment}".`);
+  logger.info(`  ${APP_ENVIRONMENT_KEY}=${environment}`);
 }
 
-function reportTemplates(written: string[]): void {
-  if (written.length === 0) {
-    return;
+export async function envRemoveAction(
+  name: string,
+  options: EnvRemoveOptions
+): Promise<void> {
+  const cwd = process.cwd();
+  const manifest = readManifest(cwd, "slskit env remove");
+  const environment = requireName(name);
+
+  const config = requireEnvironment(manifest, environment);
+  const remaining = environmentNames(manifest).filter((each) => each !== environment);
+
+  if (!options.yes) {
+    if (!process.stdin.isTTY) {
+      throw new CliError(
+        `Removing an environment cannot be undone. Re-run with --yes to remove "${environment}".`
+      );
+    }
+
+    const { confirm } = await import("@inquirer/prompts");
+    const count = Object.keys(config.variables ?? {}).length;
+    const proceed = await confirm({
+      message: `Remove environment "${environment}" and its ${count} variable(s) from sless.json?`,
+      default: false,
+    });
+
+    if (!proceed) {
+      logger.info("\nNothing was removed.");
+      return;
+    }
   }
-  logger.info(`\nRegenerated ${written.length} template(s):`);
-  for (const file of written) {
-    logger.info(`  ${file}`);
+
+  const list = { ...manifest.environments?.list };
+  delete list[environment];
+
+  const wasDefault = manifest.environments?.default === environment;
+
+  writeManifest(cwd, {
+    ...manifest,
+    environments: {
+      default: wasDefault ? remaining[0] ?? environment : manifest.environments!.default,
+      list,
+    },
+  });
+
+  const written = regenerateTemplates(cwd, readManifest(cwd, "slskit env remove"));
+
+  logger.info(`\nRemoved environment "${environment}".`);
+  if (wasDefault && remaining.length > 0) {
+    logger.info(`  default environment is now "${remaining[0]}"`);
+  }
+  logger.info(
+    `  ${dotenvFileName(environment)} was left in place — delete it yourself if you no longer need those values.`
+  );
+  if (written.length > 0) {
+    logger.info(`  regenerated ${written.length} template(s)`);
   }
 }
 
 export async function envSetAction(
-  input: string,
+  assignment: string,
   options: EnvSetOptions
 ): Promise<void> {
   const cwd = process.cwd();
   const manifest = readManifest(cwd, "slskit env set");
-  const stage = resolveStageName(manifest, options.stage);
-  const config = requireStage(manifest, stage);
+  const environment = resolveEnvironmentName(manifest, options.env);
+  const config = requireEnvironment(manifest, environment);
 
-  const eq = input.indexOf("=");
-  const key = parseKey(eq === -1 ? input : input.slice(0, eq));
-  const inlineValue = eq === -1 ? undefined : input.slice(eq + 1);
+  const eq = assignment.indexOf("=");
+  const hasValue = eq > 0;
+  const key = parseKey(hasValue ? assignment.slice(0, eq) : assignment);
+  const value = hasValue ? assignment.slice(eq + 1) : undefined;
 
-  if (options.secret && options.ssm) {
-    throw new CliError('Pass either "--secret" or "--ssm <path>", not both.');
+  if (options.ssm && options.secret) {
+    throw new CliError('Pass either "--secret" or "--ssm", not both.');
   }
-
-  assertNoParameterCollision(manifest, key);
 
   let def: EnvVarDef;
-  let secretFile: string | undefined;
+  let where: string;
 
   if (options.ssm) {
-    if (inlineValue !== undefined) {
-      throw new CliError(
-        `"--ssm" resolves the value from Parameter Store, so do not also pass a value for ${key}.`
-      );
-    }
-    def = { ssm: options.ssm.trim() };
+    def = { ssm: options.ssm };
+    where = `SSM parameter ${options.ssm}`;
   } else if (options.secret) {
-    let value = inlineValue;
-
     if (value === undefined) {
-      if (!process.stdin.isTTY) {
-        throw new CliError(
-          `Non-interactive use needs a value: slskit env set ${key}=<value> --secret`
-        );
-      }
-      const { password } = await import("@inquirer/prompts");
-      value = await password({ message: `Value for ${key}:`, mask: true });
+      throw new CliError(`A secret needs a value: slskit env set ${key}=<value> --secret`);
     }
-
-    if (!value) {
-      throw new CliError(`A secret value for ${key} is required.`);
-    }
-
-    ensureDotenvIgnored(cwd);
-    secretFile = setDotenvValue(cwd, stage, key, value);
     def = { secret: true };
+    ensureDotenvIgnored(cwd);
+    const file = setDotenvValue(cwd, environment, key, value);
+    where = file;
   } else {
-    if (inlineValue === undefined) {
-      throw new CliError(
-        `Pass a value: slskit env set ${key}=<value>  (or "--secret" to keep it out of ${"sless.json"}).`
-      );
+    if (value === undefined) {
+      throw new CliError(`A value is required: slskit env set ${key}=<value>`);
     }
-    def = { value: inlineValue };
+    def = { value };
+    where = "sless.json";
   }
 
-  const env = { ...config.env, [key]: def };
-  writeStageEnv(cwd, manifest, stage, env);
+  const variables = { ...config.variables, [key]: def };
+  const knownBefore = Object.keys(config.variables ?? {});
 
-  const updated = readManifest(cwd, "slskit env set");
-  const written = regenerateTemplates(cwd, updated);
+  writeManifest(cwd, {
+    ...manifest,
+    environments: {
+      default: manifest.environments!.default,
+      list: {
+        ...manifest.environments!.list,
+        [environment]: { ...config, variables },
+      },
+    },
+  });
 
-  logger.info(`\nSet ${key} for stage "${stage}".`);
-  logger.info(`  source:    ${envVarSource(def)}`);
-  if (def.value !== undefined) {
-    logger.info(`  value:     ${def.value}`);
-  }
-  if (secretFile) {
-    logger.info(`  value:     stored in ${secretFile} (gitignored, never in sless.json)`);
-  }
-  if (def.ssm) {
-    logger.info(`  ssm path:  ${def.ssm}`);
-  }
-  logger.info(`  parameter: ${envParameterName(key)}`);
-  reportTemplates(written);
-}
+  logger.info(`\nSet ${key} for environment "${environment}".`);
+  logger.info(`  stored in: ${where}`);
 
-export async function envListAction(options: EnvListOptions): Promise<void> {
-  const cwd = process.cwd();
-  const manifest = readManifest(cwd, "slskit env list");
-  const stage = resolveStageName(manifest, options.stage);
-  const config = requireStage(manifest, stage);
-
-  const env = config.env ?? {};
-  const keys = Object.keys(env).sort();
-
-  if (keys.length === 0) {
-    logger.info(`\nStage "${stage}" has no environment variables yet.`);
-    logger.info(`  Add one: slskit env set KEY=value --stage ${stage}`);
-    return;
-  }
-
-  const secrets = readDotenv(cwd, stage);
-  logger.info(`\nEnvironment variables for stage "${stage}":\n`);
-
-  for (const key of keys) {
-    const def = env[key];
-    const source = envVarSource(def);
-
-    let shown: string;
-    if (source === "ssm") {
-      shown = `ssm:${def.ssm}`;
-    } else if (source === "secret") {
-      const stored = secrets[key];
-      if (stored === undefined) {
-        shown = `<missing from ${dotenvFileName(stage)}>`;
-      } else {
-        shown = options.showSecrets ? stored : "********";
-      }
-    } else {
-      shown = def.value ?? "";
+  // A brand-new variable name means every template needs a matching parameter.
+  if (!knownBefore.includes(key)) {
+    const written = regenerateTemplates(cwd, readManifest(cwd, "slskit env set"));
+    if (written.length > 0) {
+      logger.info(`  regenerated ${written.length} template(s) for the new parameter`);
     }
-
-    logger.info(`  ${key.padEnd(24)} ${source.padEnd(7)} ${shown}`);
   }
 }
 
 export async function envUnsetAction(
-  keyInput: string,
+  key: string,
   options: EnvUnsetOptions
 ): Promise<void> {
   const cwd = process.cwd();
   const manifest = readManifest(cwd, "slskit env unset");
-  const stage = resolveStageName(manifest, options.stage);
-  const config = requireStage(manifest, stage);
-  const key = parseKey(keyInput);
+  const environment = resolveEnvironmentName(manifest, options.env);
+  const config = requireEnvironment(manifest, environment);
+  const name = parseKey(key);
 
-  if (!config.env?.[key]) {
-    throw new CliError(`Stage "${stage}" has no variable named "${key}".`);
+  if (!config.variables?.[name]) {
+    throw new CliError(
+      `Variable "${name}" is not set for environment "${environment}".`
+    );
   }
 
-  const wasSecret = envVarSource(config.env[key]) === "secret";
-  const env = { ...config.env };
-  delete env[key];
+  const variables = { ...config.variables };
+  delete variables[name];
 
-  writeStageEnv(cwd, manifest, stage, env);
+  writeManifest(cwd, {
+    ...manifest,
+    environments: {
+      default: manifest.environments!.default,
+      list: {
+        ...manifest.environments!.list,
+        [environment]: { ...config, variables },
+      },
+    },
+  });
 
-  if (wasSecret) {
-    unsetDotenvValue(cwd, stage, key);
+  unsetDotenvValue(cwd, environment, name);
+  const written = regenerateTemplates(cwd, readManifest(cwd, "slskit env unset"));
+
+  logger.info(`\nRemoved ${name} from environment "${environment}".`);
+  if (written.length > 0) {
+    logger.info(`  regenerated ${written.length} template(s)`);
   }
-
-  const updated = readManifest(cwd, "slskit env unset");
-  const written = regenerateTemplates(cwd, updated);
-
-  logger.info(`\nRemoved ${key} from stage "${stage}".`);
-  if (wasSecret) {
-    logger.info(`  also removed from ${dotenvFileName(stage)}`);
-  }
-  reportTemplates(written);
 }
+
+export async function envVarsAction(options: EnvVarsOptions): Promise<void> {
+  const cwd = process.cwd();
+  const manifest = readManifest(cwd, "slskit env vars");
+  const environment = resolveEnvironmentName(manifest, options.env);
+  const config = requireEnvironment(manifest, environment);
+  const secrets = readDotenv(cwd, environment);
+
+  logger.info(`\nVariables for environment "${environment}":\n`);
+  // Always shown first: it is generated, not stored, and every name derives from it.
+  logger.info(`  ${APP_ENVIRONMENT_KEY}=${environment}   (generated)`);
+
+  const keys = Object.keys(config.variables ?? {}).sort();
+
+  for (const key of keys) {
+    const def = config.variables![key];
+    const source = envVarSource(def);
+
+    if (source === "ssm") {
+      logger.info(`  ${key}=<ssm:${def.ssm}>   (resolved by AWS at deploy)`);
+      continue;
+    }
+
+    if (source === "secret") {
+      const held = secrets[key];
+      const shown = options.showSecrets
+        ? held ?? "(missing)"
+        : held
+          ? "********"
+          : "(missing)";
+      logger.info(`  ${key}=${shown}   (secret, ${dotenvFileName(environment)})`);
+      continue;
+    }
+
+    logger.info(`  ${key}=${def.value ?? ""}   (sless.json)`);
+  }
+
+  if (keys.length === 0) {
+    logger.info("\n  No variables set yet. Add one with \"slskit env set KEY=value\".");
+  } else if (!options.showSecrets && keys.some((key) => config.variables![key].secret)) {
+    logger.info("\nRe-run with --show-secrets to reveal secret values.");
+  }
+}
+
+// Called by init and configure so a new environment always has its dotenv file.
+export function seedDotenv(cwd: string, environment: string): string {
+  ensureDotenvIgnored(cwd);
+  const existing = readDotenv(cwd, environment);
+  return writeDotenv(cwd, environment, existing);
+}
+
+export { stackNameFor };

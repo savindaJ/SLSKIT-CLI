@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { CliError } from "../../core/errors.js";
-import { allEnvKeys } from "../../core/manifest.js";
+import { allEnvKeys } from "../../core/environments.js";
 import { logger } from "../../core/logger.js";
 import { SRC_DIR, sameRuntimeFamily } from "../init/types.js";
 import type { ServiceFunction } from "../init/types.js";

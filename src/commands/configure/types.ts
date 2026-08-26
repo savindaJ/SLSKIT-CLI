@@ -1,23 +1,26 @@
 export type {
-  DeploymentConfig,
   EnvVarDef,
   EnvVarSource,
+  EnvironmentConfig,
   ProjectManifest as ConfigurableManifest,
-  StageConfig,
-} from "../../core/manifest.js";
+} from "../../core/environments.js";
 
-export { MANIFEST_FILE } from "../../core/manifest.js";
+export {
+  DEFAULT_ENVIRONMENT,
+  MANIFEST_FILE,
+} from "../../core/environments.js";
 
 export interface ConfigureOptions {
-  stage?: string;
+  env?: string;
   profile?: string;
   region?: string;
   stackName?: string;
   skipVerify?: boolean;
+  setCredentials?: boolean;
 }
 
 export interface ConfigureAnswers {
-  stage: string;
+  environment: string;
   region: string;
   profile?: string;
   stackName: string;
@@ -32,5 +35,3 @@ export interface IdentityResult {
   identity?: AwsIdentity;
   error?: string;
 }
-
-export const DEFAULT_STAGE = "dev";

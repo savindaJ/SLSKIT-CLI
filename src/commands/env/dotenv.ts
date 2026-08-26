@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import { APP_ENVIRONMENT_KEY } from "../../core/environments.js";
 
-// Secrets live beside the project in .env.<stage>, which the generated .gitignore
-// excludes. Nothing in this file is ever written into sless.json.
-export function dotenvFileName(stage: string): string {
-  return `.env.${stage}`;
+// Secret values live beside the project in .env.<environment>, which the generated
+// .gitignore excludes. Nothing in this file is ever written into sless.json.
+export function dotenvFileName(environment: string): string {
+  return `.env.${environment}`;
 }
 
 function parseLine(line: string): [string, string] | undefined {
@@ -21,18 +22,20 @@ function parseLine(line: string): [string, string] | undefined {
   const key = trimmed.slice(0, eq).trim();
   let value = trimmed.slice(eq + 1).trim();
 
-  if (
-    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
-    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
-  ) {
+  if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+    value = value.slice(1, -1).replace(/\\(["\\])/g, "$1");
+  } else if (value.startsWith("'") && value.endsWith("'") && value.length >= 2) {
     value = value.slice(1, -1);
   }
 
   return [key, value];
 }
 
-export function readDotenv(cwd: string, stage: string): Record<string, string> {
-  const file = path.join(cwd, dotenvFileName(stage));
+export function readDotenv(
+  cwd: string,
+  environment: string
+): Record<string, string> {
+  const file = path.join(cwd, dotenvFileName(environment));
   if (!fs.existsSync(file)) {
     return {};
   }
@@ -48,49 +51,58 @@ export function readDotenv(cwd: string, stage: string): Record<string, string> {
   return values;
 }
 
-// Values are quoted so spaces and "#" survive a round trip.
+// Values are quoted when they contain anything that would not survive a raw round trip.
 function formatLine(key: string, value: string): string {
-  return /^[A-Za-z0-9_./:-]*$/.test(value) ? `${key}=${value}` : `${key}="${value.replace(/"/g, '\\"')}"`;
+  if (/^[A-Za-z0-9_./:-]*$/.test(value)) {
+    return `${key}=${value}`;
+  }
+
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `${key}="${escaped}"`;
 }
 
+// APP_ENVIRONMENT is always written first and always equals the environment name,
+// so the file is self-describing and can never disagree with the manifest.
 export function writeDotenv(
   cwd: string,
-  stage: string,
+  environment: string,
   values: Record<string, string>
 ): string {
-  const file = dotenvFileName(stage);
-  const body = Object.keys(values)
+  const file = dotenvFileName(environment);
+  const rest = Object.keys(values)
+    .filter((key) => key !== APP_ENVIRONMENT_KEY)
     .sort()
-    .map((key) => formatLine(key, values[key]))
-    .join("\n");
+    .map((key) => formatLine(key, values[key]));
 
-  const header = `# Secret values for the "${stage}" stage. Never commit this file.\n`;
-  fs.writeFileSync(
-    path.join(cwd, file),
-    body ? `${header}${body}\n` : header
-  );
+  const body = [formatLine(APP_ENVIRONMENT_KEY, environment), ...rest].join("\n");
+  const header = `# Values for the "${environment}" environment. Never commit this file.\n`;
 
+  fs.writeFileSync(path.join(cwd, file), `${header}${body}\n`);
   return file;
 }
 
 export function setDotenvValue(
   cwd: string,
-  stage: string,
+  environment: string,
   key: string,
   value: string
 ): string {
-  const values = readDotenv(cwd, stage);
+  const values = readDotenv(cwd, environment);
   values[key] = value;
-  return writeDotenv(cwd, stage, values);
+  return writeDotenv(cwd, environment, values);
 }
 
-export function unsetDotenvValue(cwd: string, stage: string, key: string): void {
-  const values = readDotenv(cwd, stage);
+export function unsetDotenvValue(
+  cwd: string,
+  environment: string,
+  key: string
+): void {
+  const values = readDotenv(cwd, environment);
   if (!(key in values)) {
     return;
   }
   delete values[key];
-  writeDotenv(cwd, stage, values);
+  writeDotenv(cwd, environment, values);
 }
 
 // A leaked credential is the expensive failure here, so the ignore rule is repaired
@@ -104,7 +116,7 @@ export function ensureDotenvIgnored(cwd: string): boolean {
     return false;
   }
 
-  const addition = `${existing.endsWith("\n") || existing === "" ? "" : "\n"}.env.*\n!.env.example\n`;
-  fs.writeFileSync(file, `${existing}${addition}`);
+  const separator = existing.endsWith("\n") || existing === "" ? "" : "\n";
+  fs.writeFileSync(file, `${existing}${separator}.env.*\n!.env.example\n`);
   return true;
 }

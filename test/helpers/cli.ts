@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CommanderError } from "commander";
+import type { Command } from "commander";
 import { createProgram } from "../../src/program";
 
 export interface CliResult {
@@ -18,9 +19,15 @@ export async function runProgram(
   let stderr = "";
   const program = createProgram();
 
-  program.exitOverride((error) => {
-    throw error;
-  });
+  const throwInsteadOfExit = (command: Command): void => {
+    command.exitOverride((error) => {
+      throw error;
+    });
+    for (const child of command.commands) {
+      throwInsteadOfExit(child);
+    }
+  };
+  throwInsteadOfExit(program);
   program.configureOutput({
     writeOut: (str) => {
       stdout += str;

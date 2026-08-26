@@ -47,10 +47,19 @@ API Gateway port. Verifies the AWS SAM CLI is installed first, and offers to
 install it (Homebrew on macOS, snap on Linux) when it is missing.
 
 ```bash
-slskit run                 # sam build, then sam local start-api on port 3000
-slskit run --port 4000     # use a different port
+slskit run                 # the default environment, port 3000
+slskit run staging         # run with the staging environment
+slskit run dev --port 4000 # an environment and a different port
 slskit run --no-build      # skip sam build
 ```
+
+Name the environment as the first argument (`--env staging` also works). It runs
+with that environment's variables, so `APP_ENVIRONMENT` and everything set with
+`slskit env set` are present locally exactly as they will be in AWS.
+
+An environment that does not exist, or a `--secret` variable missing from its
+`.env.<environment>`, fails before `sam` starts rather than booting with an empty
+value. Override values are never printed — only how many there are.
 
 ### `slskit function [name]`
 
@@ -87,142 +96,200 @@ JavaScript project, or the first Node function in a Python project) —
 
 ### `slskit configure`
 
-Records the AWS credentials and deploy target for a stage. Run it from the
+Records the AWS credentials and deploy target for an environment. Run it from the
 project root, before deploying. Prompts interactively when flags are omitted;
 `--profile` (or credentials in the environment) and a region must be supplied in
 a non-interactive shell.
 
 ```bash
-slskit configure                                    # interactive, stage "dev"
+slskit configure                                    # interactive, environment "dev"
 slskit configure --profile work --region us-east-1
-slskit configure --stage prod --profile prod-admin --region eu-west-2
+slskit configure --env production --profile prod-admin --region eu-west-2
 ```
 
 | Flag | Values |
 | --- | --- |
-| `--stage` | Stage to configure — defaults to `dev` |
+| `-e, --env` | Environment to configure — defaults to `dev` |
 | `--profile` | AWS named profile to resolve credentials from |
 | `--region` | AWS region to deploy into (example: `us-east-1`) |
-| `--stack-name` | CloudFormation stack name — defaults to `<project>-<stage>` |
+| `--stack-name` | CloudFormation stack name — defaults to `<project>-<environment>` |
 | `--skip-verify` | Save without checking that the credentials work |
+| `--set-credentials` | Enter an AWS access key and store it in `~/.aws/credentials` |
 
-Each value falls back, in order, to the flag, whatever the stage already had,
-the environment (`AWS_PROFILE`, `AWS_REGION`), and then your AWS config file.
+Each value falls back, in order, to the flag, whatever the environment already
+had, the shell (`AWS_PROFILE`, `AWS_REGION`), and then your AWS config file.
 Credentials are verified with `aws sts get-caller-identity` and the command
 fails without writing anything if they don't work — use `--skip-verify` to save
 regardless. When the AWS CLI isn't installed the check is skipped with a notice.
 
-**No credential material is ever written to disk.** Only the profile *name* is
-stored in `sless.json`, and it is resolved at deploy time; when credentials come
-from environment variables no profile is recorded at all.
+#### Storing an AWS access key
+
+If the credentials don't verify, `configure` offers to take a key there and then:
+
+```text
+Could not verify AWS credentials for profile "work" in us-east-1.
+? Enter an AWS access key now and store it in ~/.aws/credentials? Yes
+? AWS Access Key ID: AKIA...
+? AWS Secret Access Key: [hidden]
+```
+
+The secret is never echoed. It is handed to `aws configure set`, which writes it
+to `~/.aws/credentials` — **outside your project**, so it can never be committed.
+Use `--set-credentials` to replace a key that already works.
+
+**No credential material is ever written into the project.** Only the profile
+*name* is stored in `sless.json`, and it is resolved at deploy time; when
+credentials come from environment variables no profile is recorded at all.
+
+### `slskit deploy [environment]`
+
+Deploys one environment to AWS — every function, API Gateway, layer and table in
+the project, under that environment's own CloudFormation stack.
+
+```bash
+slskit deploy                # the default environment
+slskit deploy dev
+slskit deploy production
+slskit deploy production -y  # skip the confirmation prompt (CI)
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `-e, --env` | Environment to deploy (the positional argument also works) |
+| `-y, --yes` | Skip the confirmation prompt — required in a non-interactive shell |
+| `--no-build` | Skip `sam build` |
+| `--skip-verify` | Deploy without checking the credentials first |
+| `--guided` | Run `sam deploy --guided` instead of the managed defaults |
+
+Each environment deploys to its own stack with its own region, profile and
+variables, so `dev` and `production` never touch each other:
+
+| | dev | production |
+| --- | --- | --- |
+| Stack | `shop-dev` | `shop-production` |
+| Lambda | `shop-dev-login` | `shop-production-login` |
+| Region | whatever `configure` recorded | whatever `configure` recorded |
+
+It stops before calling AWS if the environment has no region, doesn't exist, the
+credentials don't verify, or a `--secret` variable is missing from its
+`.env.<environment>` — so a failed deploy costs you nothing. Because deploying
+creates real, billable AWS resources, it prints the plan and asks first:
+
+```text
+About to deploy "shop" to AWS.
+  APP_ENVIRONMENT: production
+  stack:       shop-production
+  region:      eu-west-2
+  functions:   4
+    shop-production-login
+    ...
+This creates real AWS resources in your account and they cost money.
+? Deploy to "production"? (y/N)
+```
+
+Nested stacks are deployed with `CAPABILITY_IAM` and `CAPABILITY_AUTO_EXPAND`,
+and `--resolve-s3` provisions the artifact bucket, so a first deploy needs no
+manual setup. Afterwards it prints each application's API URL.
+
+### `slskit env`
+
+Manages deployment environments and their variables. Every project starts with a
+`dev` environment created by `slskit init`; add as many more as you need.
+
+```bash
+slskit env list                       # every environment, * marks the default
+slskit env add production --profile prod-admin --region eu-west-2
+slskit env use production             # what commands default to from now on
+slskit env remove staging --yes
+```
+
+An environment is an independent deploy target: its own AWS region, profile,
+CloudFormation stack, and variables.
 
 ```jsonc
-"deployment": {
-  "defaultStage": "dev",
-  "stages": {
-    "dev": { "region": "us-east-1", "profile": "work", "stackName": "my-app-dev" }
+"environments": {
+  "default": "dev",
+  "list": {
+    "dev":        { "region": "us-east-1", "profile": "work",       "stackName": "shop-dev" },
+    "production": { "region": "eu-west-2", "profile": "prod-admin", "stackName": "shop-production" }
   }
 }
 ```
 
-### `slskit stage`
+#### `APP_ENVIRONMENT`
 
-Manages deployment stages. Every stage is an independent deploy target — its own
-AWS region, profile, CloudFormation stack, and environment variables.
+Every environment generates one variable automatically, and every AWS resource
+name is built from it:
 
 ```bash
-slskit stage list
-slskit stage add staging --profile work --region eu-west-2
-slskit stage use production      # change the stage other commands default to
-slskit stage remove staging --yes
+APP_ENVIRONMENT=dev
 ```
 
-`stage add` runs the same setup as `slskit configure --stage <name>`, so it
-verifies the credentials before saving. The first stage you configure becomes the
-default; `stage use` changes it. Removing a stage leaves its `.env.<stage>` file
-on disk so secrets are never silently deleted.
+| Thing | Name |
+| --- | --- |
+| CloudFormation stack | `<project>-<APP_ENVIRONMENT>` — `shop-production` |
+| Lambda function | `<project>-<APP_ENVIRONMENT>-<function>` — `shop-production-login` |
+| Lambda environment | `APP_ENVIRONMENT` is injected into every function |
 
-### `slskit env`
+It is written into `.env.<environment>`, injected into every Lambda, and always
+equal to the environment name — so `slskit env set APP_ENVIRONMENT=...` is
+refused. Create another environment with `slskit env add` instead.
 
-Manages the environment variables of one stage. Every stage-aware command falls
-back to the project's default stage when `--stage` is omitted.
+Because a Lambda function name is capped at 64 characters, `slskit env add`
+refuses an environment name that would push any function past the limit, rather
+than letting the deploy fail halfway through.
+
+#### Variables
 
 ```bash
-slskit env set LOG_LEVEL=info                            # committed to sless.json
-slskit env set DATABASE_URL --secret --stage production  # prompts, writes .env.production
-slskit env set API_KEY --ssm /app/prod/api-key           # resolved from Parameter Store
-slskit env list --stage production
-slskit env unset API_KEY --stage production
+slskit env set LOG_LEVEL=debug                        # plain value, in sless.json
+slskit env set API_KEY=sk-live-abc --secret           # value in .env.<environment>
+slskit env set DB_PASSWORD --ssm /shop/prod/db        # resolved by AWS at deploy
+slskit env vars --env production                      # secrets masked
+slskit env unset API_KEY
 ```
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--stage` | all | Stage to act on — defaults to the project's default stage |
-| `--secret` | `set` | Store the value in `.env.<stage>` instead of `sless.json` |
-| `--ssm <path>` | `set` | Resolve the value from an SSM Parameter Store path |
-| `--show-secrets` | `list` | Print secret values instead of masking them |
-
-Each variable records **where its value comes from**, never the secret itself:
-
-```jsonc
-"deployment": {
-  "defaultStage": "dev",
-  "stages": {
-    "production": {
-      "region": "eu-west-2",
-      "profile": "prod-admin",
-      "stackName": "my-app-production",
-      "env": {
-        "LOG_LEVEL":    { "value": "info" },              // committed
-        "DATABASE_URL": { "secret": true },               // value in .env.production
-        "API_KEY":      { "ssm": "/app/prod/api-key" }    // value in AWS
-      }
-    }
-  }
-}
-```
-
-> Secret values are written to `.env.<stage>`, and `slskit env set --secret` repairs
-> your `.gitignore` if it doesn't already exclude `.env.*`. A secret value is never
-> written to `sless.json`.
+| `-e, --env` | `set`, `unset`, `vars` | Environment to act on — defaults to the default environment |
+| `--secret` | `set` | Store the value in `.env.<environment>`, never in `sless.json` |
+| `--ssm <path>` | `set` | Store only the SSM path; AWS resolves the value at deploy |
+| `--show-secrets` | `vars` | Reveal secret values instead of masking them |
 
 #### How variables reach your functions
 
-Templates are shared by every stage, so each one declares a CloudFormation
-parameter for the **union** of variable names across all stages, and every function
-references them:
+Templates are shared by every environment, so each variable becomes a
+CloudFormation parameter (`LOG_LEVEL` → `EnvLogLevel`) that the deploy supplies
+as `--parameter-overrides`. Adding or removing a variable name regenerates every
+template so the parameter exists.
 
-```yaml
-Parameters:
-  EnvLogLevel:
-    Type: String
-    Default: ""            # a stage that doesn't set it still deploys
-Resources:
-  LoginFunction:
-    Properties:
-      Environment:
-        Variables:
-          LOG_LEVEL: !Ref EnvLogLevel
-```
+| Kind | Stored in | Reaches AWS as |
+| --- | --- | --- |
+| plain | `sless.json` | the literal value |
+| `--secret` | `.env.<environment>` (gitignored) | the value read from that file at deploy |
+| `--ssm` | `sless.json` (path only) | `{{resolve:ssm:<path>}}`, resolved by CloudFormation |
 
-`LOG_LEVEL` becomes the parameter `EnvLogLevel`; the `Env` prefix keeps stage
-variables from colliding with the database parameters the templates already
-declare. Two keys that collapse to the same parameter name are rejected when you
-set the second one. Templates are regenerated automatically on every `env set`,
-`env unset`, and `stage remove`, so they always match the manifest.
+A variable marked `--secret` whose value is missing from `.env.<environment>`
+fails the command with the exact `slskit env set` line that fixes it, rather
+than deploying an empty string.
 
 ## Generated layout
 
 ```text
 my-lambda-app/
-├── functions/            # Lambda handlers, one folder per application
-│   ├── auth/src/login/
-│   └── product/src/getProducts/
-├── services/             # business logic imported by the handlers
-├── shared/               # shared utilities (a Lambda layer when --layer yes)
-├── template.yaml         # single SAM stack: HTTP API, layer, and functions
+├── src/
+│   ├── functions/        # Lambda handlers, one folder per application
+│   │   ├── auth/         #   template.yaml + login/ register/
+│   │   └── product/      #   template.yaml + getProducts/ createProduct/
+│   ├── services/         # business logic imported by the handlers
+│   └── shared/           # shared utilities (a Lambda layer when --layer yes)
+├── template.yaml         # root stack, nests one stack per application
+├── .env.dev              # the dev environment's variables (gitignored)
 └── sless.json            # machine-readable project graph
 ```
+
+Each application owns a `template.yaml` next to its handlers, and the root stack
+nests them, so applications can be deployed one at a time.
 
 ## Development
 

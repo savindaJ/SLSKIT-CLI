@@ -1,31 +1,34 @@
+import { parseEnvironmentName } from "../../src/core/environments";
 import {
   defaultStackName,
   parseRegion,
   parseStackName,
-  parseStage,
 } from "../../src/commands/configure/prompts";
 
-describe("parseStage", () => {
+describe("parseEnvironmentName", () => {
   it("returns undefined when unset or blank", () => {
-    expect(parseStage(undefined)).toBeUndefined();
-    expect(parseStage("   ")).toBeUndefined();
+    expect(parseEnvironmentName(undefined)).toBeUndefined();
+    expect(parseEnvironmentName("   ")).toBeUndefined();
   });
 
   it("lowercases and trims", () => {
-    expect(parseStage("  Prod ")).toBe("prod");
+    expect(parseEnvironmentName("  Prod ")).toBe("prod");
   });
 
-  it("accepts hyphens and digits after a leading letter", () => {
-    expect(parseStage("pr-123")).toBe("pr-123");
+  it("accepts the environment names the CLI advertises", () => {
+    expect(parseEnvironmentName("dev")).toBe("dev");
+    expect(parseEnvironmentName("staging")).toBe("staging");
+    expect(parseEnvironmentName("production")).toBe("production");
+    expect(parseEnvironmentName("stage-1")).toBe("stage-1");
   });
 
   it("rejects names that do not start with a letter", () => {
-    expect(() => parseStage("1dev")).toThrow(/Invalid stage/);
-    expect(() => parseStage("-dev")).toThrow(/Invalid stage/);
+    expect(() => parseEnvironmentName("1dev")).toThrow(/Invalid environment name/);
+    expect(() => parseEnvironmentName("-dev")).toThrow(/Invalid environment name/);
   });
 
   it("rejects underscores and spaces", () => {
-    expect(() => parseStage("my_stage")).toThrow(/Invalid stage/);
+    expect(() => parseEnvironmentName("my_stage")).toThrow(/Invalid environment name/);
   });
 });
 
