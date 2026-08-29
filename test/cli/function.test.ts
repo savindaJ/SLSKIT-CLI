@@ -47,6 +47,8 @@ describe("slskit function command", () => {
         "dynamodb",
         "--api-gateway",
         "yes",
+        "--shared-api",
+        "no",
         "--layer",
         "yes",
         "--memory",
@@ -61,13 +63,13 @@ describe("slskit function command", () => {
     removeDir(dir);
   });
 
-  it("errors when sless.json is missing", async () => {
+  it("errors when slskit.json is missing", async () => {
     const emptyDir = createTempDir("slskit-fn-empty-");
     const result = await runProgram(["function", "foo", "--app", "auth", "--method", "GET", "--memory", "256", "--runtime", "javascript"], {
       cwd: emptyDir,
     });
     expect(result.status).not.toBe(0);
-    expect(stderrText(result)).toMatch(/No sless\.json found/);
+    expect(stderrText(result)).toMatch(/No slskit\.json found/);
     removeDir(emptyDir);
   });
 
@@ -92,11 +94,11 @@ describe("slskit function command", () => {
     expect(fs.existsSync(`${projectDir}/src/functions/auth/resetPassword/handler.ts`)).toBe(true);
     expect(fs.existsSync(`${projectDir}/src/services/auth/resetPassword.ts`)).toBe(true);
 
-    const template = fs.readFileSync(`${projectDir}/src/functions/auth/template.yaml`, "utf8");
+    const template = fs.readFileSync(`${projectDir}/templates/auth.yaml`, "utf8");
     expect(template).toMatch(/ResetPasswordFunction/);
     expect(template).toMatch(/MemorySize: 512/);
 
-    const manifest = JSON.parse(fs.readFileSync(`${projectDir}/sless.json`, "utf8")) as {
+    const manifest = JSON.parse(fs.readFileSync(`${projectDir}/slskit.json`, "utf8")) as {
       applications: Array<{ name: string; functions: Array<{ name: string }> }>;
     };
     const auth = manifest.applications.find((app) => app.name === "auth");
@@ -127,6 +129,28 @@ describe("slskit function command", () => {
     expect(root).toMatch(/OpsStack/);
 
     expect(infoText()).toMatch(/standalone/);
+  });
+
+  // A duplicate used to be accepted silently: the second function replaced the first
+  // in the template, and sam validate and sam build both reported success.
+  it("rejects a function name already used by a different application", async () => {
+    const add = (app: string) =>
+      runProgram(
+        ["function", "list", "--new-app", app, "--method", "GET",
+         "--memory", "128", "--runtime", "typescript"],
+        { cwd: projectDir }
+      );
+
+    expect((await add("category")).status).toBe(0);
+
+    const second = await add("billing");
+
+    expect(second.status).not.toBe(0);
+    expect(stderrText(second)).toMatch(/already exists in application "category"/);
+
+    const template = fs.readFileSync(`${projectDir}/templates/category.yaml`, "utf8");
+    expect(template.match(/^ {2}ListFunction:$/gm) ?? []).toHaveLength(1);
+    expect(fs.existsSync(`${projectDir}/src/functions/billing`)).toBe(false);
   });
 
   it("rejects a function name that already exists in the target app", async () => {
@@ -185,6 +209,8 @@ describe("slskit function command", () => {
         "none",
         "--api-gateway",
         "yes",
+        "--shared-api",
+        "no",
         "--layer",
         "no",
         "--memory",

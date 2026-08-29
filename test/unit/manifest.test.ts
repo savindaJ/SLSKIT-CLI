@@ -1,12 +1,12 @@
 import { buildFileMap } from "../../src/commands/init/content";
-import { buildSlessManifest } from "../../src/commands/init/manifest";
+import { buildProjectManifest } from "../../src/commands/init/manifest";
 import { LAMBDA_APPS } from "../../src/commands/init/types";
 import { fullStackAnswers, minimalAnswers } from "../helpers/fixtures";
 
-describe("buildSlessManifest", () => {
+describe("buildProjectManifest", () => {
   it("includes complete project metadata", () => {
     const files = buildFileMap(fullStackAnswers);
-    const manifest = buildSlessManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as Record<
+    const manifest = buildProjectManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as Record<
       string,
       unknown
     >;
@@ -18,7 +18,7 @@ describe("buildSlessManifest", () => {
 
   it("lists all applications and functions", () => {
     const files = buildFileMap(fullStackAnswers);
-    const manifest = buildSlessManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
+    const manifest = buildProjectManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
       applications: Array<{ name: string; functions: Array<{ id: string }> }>;
     };
 
@@ -36,7 +36,7 @@ describe("buildSlessManifest", () => {
 
   it("includes API Gateway routes when enabled", () => {
     const files = buildFileMap(fullStackAnswers);
-    const manifest = buildSlessManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
+    const manifest = buildProjectManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
       apiGateway: { enabled: boolean; routes: Array<{ path: string }> };
     };
 
@@ -47,7 +47,7 @@ describe("buildSlessManifest", () => {
 
   it("disables API Gateway when not enabled", () => {
     const files = buildFileMap(minimalAnswers);
-    const manifest = buildSlessManifest(minimalAnswers, LAMBDA_APPS, Object.keys(files)) as {
+    const manifest = buildProjectManifest(minimalAnswers, LAMBDA_APPS, Object.keys(files)) as {
       apiGateway: { enabled: boolean; routes?: unknown[] };
     };
 
@@ -57,7 +57,7 @@ describe("buildSlessManifest", () => {
 
   it("attaches layer metadata to every function", () => {
     const files = buildFileMap(fullStackAnswers);
-    const manifest = buildSlessManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
+    const manifest = buildProjectManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
       layer: { enabled: boolean; attachedTo: string[] };
     };
 
@@ -67,7 +67,7 @@ describe("buildSlessManifest", () => {
 
   it("records memory size on functions and global config", () => {
     const files = buildFileMap(fullStackAnswers);
-    const manifest = buildSlessManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
+    const manifest = buildProjectManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
       functions: { memorySize: number };
       applications: Array<{ functions: Array<{ memorySize: number }> }>;
     };
@@ -82,12 +82,12 @@ describe("buildSlessManifest", () => {
 
   it("includes sorted structure files list", () => {
     const files = buildFileMap(fullStackAnswers);
-    const manifest = buildSlessManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
+    const manifest = buildProjectManifest(fullStackAnswers, LAMBDA_APPS, Object.keys(files)) as {
       structure: { files: string[] };
     };
 
     const sorted = [...manifest.structure.files].sort();
     expect(manifest.structure.files).toEqual(sorted);
-    expect(manifest.structure.files).toContain("sless.json");
+    expect(manifest.structure.files).toContain("slskit.json");
   });
 });

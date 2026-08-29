@@ -11,6 +11,7 @@ export interface InitOptions {
   runtime?: string;
   database?: string;
   apiGateway?: string | boolean;
+  sharedApi?: string | boolean;
   layer?: string | boolean;
   memory?: string | number;
   force?: boolean;
@@ -21,6 +22,10 @@ export interface InitAnswers {
   runtime: RuntimeId;
   database: DatabaseId;
   apiGateway: boolean;
+  // One HTTP API for the whole project rather than one per service. SAM only
+  // resolves an ApiId inside the template that declares the API, so a shared API
+  // means a single flat template instead of a stack per service.
+  sharedApi: boolean;
   layer: boolean;
   memorySize: MemorySize;
   force: boolean;
@@ -62,8 +67,13 @@ export const LAMBDA_APPS: ServiceDef[] = [
 ];
 
 // Every generated project is an AWS SAM project: a root stack that nests one
-// template per application, each named the same way.
+// template per application.
 export const INFRA_FILE = "template.yaml";
+
+// Service templates are gathered in one directory rather than buried next to the
+// handlers, so the whole infrastructure of a project is readable in one place --
+// the thing that matters most once a project has more than a handful of services.
+export const TEMPLATES_DIR = "templates";
 
 export function lambdaRuntime(runtime: RuntimeId): string {
   return runtime === "python" ? "python3.12" : "nodejs20.x";
@@ -100,7 +110,7 @@ export function sharedCodeDir(answers: InitAnswers): string {
 }
 
 export function serviceTemplatePath(appName: string): string {
-  return `${SRC_DIR}/functions/${appName}/${INFRA_FILE}`;
+  return `${TEMPLATES_DIR}/${appName}.yaml`;
 }
 
 // Node and Python are different runtime families: a layer/db built for one can never

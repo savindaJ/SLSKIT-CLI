@@ -5,6 +5,7 @@ import {
 import {
   INFRA_FILE,
   SRC_DIR,
+  TEMPLATES_DIR,
   handlerFileName,
   lambdaRuntime,
   sameRuntimeFamily,
@@ -23,7 +24,7 @@ function handlerValue(runtime: RuntimeId, appName: string, fnName: string): stri
   return `${SRC_DIR}/functions/${appName}/${fnName}/handler.handler`;
 }
 
-export function buildSlessManifest(
+export function buildProjectManifest(
   answers: InitAnswers,
   apps: ServiceDef[],
   generatedFiles: string[]
@@ -33,7 +34,7 @@ export function buildSlessManifest(
   const applications = apps.map((app) => ({
     name: app.name,
     path: `${SRC_DIR}/functions/${app.name}`,
-    template: serviceTemplatePath(app.name),
+    template: answers.sharedApi ? INFRA_FILE : serviceTemplatePath(app.name),
     functions: app.functions.map((fn) => {
       const fnRuntime = fn.runtime ?? answers.runtime;
       const sameFamily = sameRuntimeFamily(fnRuntime, answers.runtime);
@@ -55,7 +56,7 @@ export function buildSlessManifest(
         apiGateway: answers.apiGateway
           ? {
               enabled: true,
-              gateway: app.name,
+              gateway: answers.sharedApi ? `${answers.name}-http-api` : app.name,
               path: fn.httpPath,
               method: fn.method,
             }
@@ -95,6 +96,7 @@ export function buildSlessManifest(
       `${SRC_DIR}/services/${app.name}`,
     ]),
     sharedDir,
+    ...(answers.sharedApi ? [] : [TEMPLATES_DIR]),
     ...(answers.database === "prisma" ? ["prisma"] : []),
   ];
 
@@ -117,7 +119,9 @@ export function buildSlessManifest(
       files: {
         root: INFRA_FILE,
         application: INFRA_FILE,
-        applications: apps.map((app) => serviceTemplatePath(app.name)),
+        applications: answers.sharedApi
+          ? []
+          : apps.map((app) => serviceTemplatePath(app.name)),
       },
     },
     database: {
@@ -132,9 +136,12 @@ export function buildSlessManifest(
           enabled: true,
           name: `${answers.name}-http-api`,
           type: "HttpApi",
-          // SAM gives each service its own API so every reference resolves inside one template.
-          perService: true,
-          templates: apps.map((app) => serviceTemplatePath(app.name)),
+          // SAM only resolves an ApiId inside the template that declares the API, so
+          // one shared API means one flat template and per-service APIs mean one each.
+          perService: !answers.sharedApi,
+          templates: answers.sharedApi
+            ? [INFRA_FILE]
+            : apps.map((app) => serviceTemplatePath(app.name)),
           attachAllFunctions: true,
           routes,
         }
@@ -145,7 +152,9 @@ export function buildSlessManifest(
           name: `${answers.name}-shared`,
           path: `${SRC_DIR}/shared`,
           source: sharedDir,
-          templates: apps.map((app) => serviceTemplatePath(app.name)),
+          templates: answers.sharedApi
+            ? [INFRA_FILE]
+            : apps.map((app) => serviceTemplatePath(app.name)),
           compatibleRuntimes: [lambdaRuntime(answers.runtime)],
           attachAllFunctions: layerAttachedTo.length === applications.flatMap((a) => a.functions).length,
           attachedTo: layerAttachedTo,
@@ -163,7 +172,7 @@ export function buildSlessManifest(
     services,
     structure: {
       directories,
-      files: [...generatedFiles, "sless.json"].sort(),
+      files: [...generatedFiles, "slskit.json"].sort(),
     },
   };
 }

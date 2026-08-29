@@ -73,8 +73,8 @@ describe("generateFunction", () => {
 
     expect(result.rootTemplatePath).toBe("template.yaml");
     expect(result.files["template.yaml"]).toMatch(/OpsStack/);
-    expect(result.files["template.yaml"]).toMatch(/Location: src\/functions\/ops\/template\.yaml/);
-    expect(result.files["src/functions/ops/template.yaml"]).toMatch(/Description: ops service/);
+    expect(result.files["template.yaml"]).toMatch(/Location: templates\/ops\.yaml/);
+    expect(result.files["templates/ops.yaml"]).toMatch(/Description: ops service/);
   });
 
   it("does not touch the root template when adding to an existing app", () => {
@@ -93,7 +93,7 @@ describe("generateFunction", () => {
     );
 
     expect(result.rootTemplatePath).toBeUndefined();
-    expect(result.appTemplatePath).toBe("src/functions/auth/template.yaml");
+    expect(result.appTemplatePath).toBe("templates/auth.yaml");
   });
 
   it("writes __init__.py markers for a new python function", () => {
@@ -113,7 +113,7 @@ describe("generateFunction", () => {
     expect(result.files["src/services/auth/__init__.py"]).toBe("");
   });
 
-  it("rebuilds sless.json including previously generated files", () => {
+  it("rebuilds slskit.json including previously generated files", () => {
     const result = generateFunction(
       fullStackAnswers,
       [authApp],
@@ -123,7 +123,7 @@ describe("generateFunction", () => {
       ["README.md", "package.json"]
     );
 
-    const manifest = JSON.parse(result.files["sless.json"]) as {
+    const manifest = JSON.parse(result.files["slskit.json"]) as {
       structure: { files: string[] };
       applications: Array<{ name: string; functions: Array<{ name: string }> }>;
     };

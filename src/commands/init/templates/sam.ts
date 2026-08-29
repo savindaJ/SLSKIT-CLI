@@ -12,13 +12,11 @@ import type {
 } from "../types.js";
 import { dynamoTableName, envParameterName, pascal } from "./helpers.js";
 
+// DATABASE_URL and MONGODB_URI are not special-cased: init seeds them into
+// .env.<environment> like any other variable, so they arrive through envKeys and are
+// overridable per stage. Only the DynamoDB table names stay literal -- the templates
+// create those tables, so they are not stage configuration.
 function databaseVariables(database: DatabaseId): string[] {
-  if (database === "prisma") {
-    return ["DATABASE_URL: !Ref DatabaseUrl"];
-  }
-  if (database === "mongoose") {
-    return ["MONGODB_URI: !Ref MongoUri"];
-  }
   if (database === "dynamodb") {
     return ["USERS_TABLE: users", "PRODUCTS_TABLE: products"];
   }
@@ -42,16 +40,6 @@ function environmentYaml(
   return `${indent}Environment:\n${indent}  Variables:\n${body}\n`;
 }
 
-function databaseParameterNames(answers: InitAnswers): string[] {
-  if (answers.database === "prisma") {
-    return ["DatabaseUrl"];
-  }
-  if (answers.database === "mongoose") {
-    return ["MongoUri"];
-  }
-  return [];
-}
-
 function stageParameterNames(envKeys: string[]): string[] {
   return envKeys.map(envParameterName);
 }
@@ -63,29 +51,18 @@ function appEnvironmentParameter(): string {
     Description: Deployment environment; every stage-scoped resource name is built from it`;
 }
 
-function samParameters(answers: InitAnswers, envKeys: string[]): string {
+function samParameters(envKeys: string[]): string {
   const params: string[] = [appEnvironmentParameter()];
 
-  if (answers.database === "prisma") {
-    params.push(`  DatabaseUrl:
-    Type: String
-    Description: Prisma DATABASE_URL
-    NoEcho: true`);
-  }
-
-  if (answers.database === "mongoose") {
-    params.push(`  MongoUri:
-    Type: String
-    Description: MongoDB connection string
-    NoEcho: true`);
-  }
-
   // Every stage variable defaults to empty, so a stage that does not set one can
-  // still deploy from the same template without supplying an override.
+  // still deploy from the same template without supplying an override. NoEcho is
+  // unconditional: any of them may hold a connection string or an API key, and
+  // nothing here reads a parameter value back out of CloudFormation.
   for (const key of envKeys) {
     params.push(`  ${envParameterName(key)}:
     Type: String
     Default: ""
+    NoEcho: true
     Description: ${key} environment variable`);
   }
 
@@ -113,14 +90,16 @@ function samHttpApiResource(): string {
 function samSharedLayerResource(answers: InitAnswers): string {
   const runtime = lambdaRuntime(answers.runtime);
   const buildMethod = answers.runtime === "python" ? "python3.12" : "nodejs20.x";
-  const contentUri =
-    answers.runtime === "python" ? "../../shared/python" : "../../shared/nodejs";
+  const layerDir = answers.runtime === "python" ? "shared/python" : "shared/nodejs";
+  const contentUri = answers.sharedApi
+    ? `${SRC_DIR}/${layerDir}`
+    : `../${SRC_DIR}/${layerDir}`;
 
   return `  SharedLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
       LayerName: !Sub "\${AWS::StackName}-shared"
-      Description: Shared utilities attached to every function in this service
+      Description: Shared utilities attached to every function
       ContentUri: ${contentUri}
       CompatibleRuntimes:
         - ${runtime}
@@ -176,6 +155,12 @@ function samFunctionName(answers: InitAnswers, fn: ServiceFunction): string {
   return `      FunctionName: !Sub "${answers.name}-\${${APP_ENVIRONMENT_PARAM}}-${fn.name}"\n`;
 }
 
+// A service template lives in templates/, one level below the project root; the
+// flat template is the project root itself.
+function codeUriFor(answers: InitAnswers): string {
+  return answers.sharedApi ? "./" : "../";
+}
+
 function samFunction(
   answers: InitAnswers,
   service: ServiceDef,
@@ -204,7 +189,7 @@ function samFunction(
     return `  ${resource}:
     Type: AWS::Serverless::Function
     Properties:
-${functionName}      CodeUri: ../../../
+${functionName}      CodeUri: ${codeUriFor(answers)}
       Handler: ${SRC_DIR}.functions.${service.name}.${fn.name}.handler.handler
       Runtime: ${runtime}
       MemorySize: ${memorySize}
@@ -223,7 +208,7 @@ ${env}${policies}${layers}${events}`;
   return `  ${resource}:
     Type: AWS::Serverless::Function
     Properties:
-${functionName}      CodeUri: ../../../
+${functionName}      CodeUri: ${codeUriFor(answers)}
       Handler: ${handlerPath}
       Runtime: ${runtime}
       MemorySize: ${memorySize}
@@ -266,7 +251,51 @@ Outputs:
 Transform: AWS::Serverless-2016-10-31
 Description: ${service.name} service
 
-${samParameters(answers, envKeys)}Globals:
+${samParameters(envKeys)}Globals:
+  Function:
+    Timeout: 10
+    MemorySize: ${answers.memorySize}
+
+Resources:
+${httpApi}${sharedLayer}${functions}${dynamo}${outputs}`;
+}
+
+// One template for the whole project: a single HTTP API, one layer, and every
+// function beside them. SAM rejects an ApiId that points outside the template that
+// declares the API, so sharing one API Gateway means everything lives together.
+export function samFlatTemplate(
+  answers: InitAnswers,
+  apps: ServiceDef[],
+  envKeys: string[] = []
+): string {
+  const httpApi = answers.apiGateway ? samHttpApiResource() : "";
+  const sharedLayer = answers.layer ? samSharedLayerResource(answers) : "";
+
+  const functions = apps
+    .flatMap((service) =>
+      service.functions.map((fn) => samFunction(answers, service, fn, envKeys))
+    )
+    .join("\n");
+
+  const dynamo =
+    answers.database === "dynamodb"
+      ? apps.map((service) => samDynamoResources(service)).join("")
+      : "";
+
+  const outputs = answers.apiGateway
+    ? `
+Outputs:
+  ApiUrl:
+    Description: HTTP API URL for every function in this project
+    Value: !Sub https://\${HttpApi}.execute-api.\${AWS::Region}.amazonaws.com
+`
+    : "";
+
+  return `AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: ${answers.name}
+
+${samParameters(envKeys)}Globals:
   Function:
     Timeout: 10
     MemorySize: ${answers.memorySize}
@@ -280,11 +309,7 @@ export function samRootTemplate(
   apps: ServiceDef[],
   envKeys: string[] = []
 ): string {
-  const parameterNames = [
-    APP_ENVIRONMENT_PARAM,
-    ...databaseParameterNames(answers),
-    ...stageParameterNames(envKeys),
-  ];
+  const parameterNames = [APP_ENVIRONMENT_PARAM, ...stageParameterNames(envKeys)];
   const parametersBlock =
     parameterNames.length > 0
       ? `      Parameters:\n${parameterNames
@@ -320,6 +345,6 @@ ${apps
 Transform: AWS::Serverless-2016-10-31
 Description: ${answers.name} root stack
 
-${samParameters(answers, envKeys)}Resources:
+${samParameters(envKeys)}Resources:
 ${services}${outputs}`;
 }

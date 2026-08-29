@@ -40,7 +40,7 @@ export function samDeploy(
   }
 
   if (parameterOverrides.length > 0) {
-    args.push("--parameter-overrides", parameterOverrides.join(" "));
+    args.push("--parameter-overrides", ...parameterOverrides);
   }
 
   // Values are deliberately not logged: overrides carry secrets.
@@ -64,6 +64,66 @@ export function samDeploy(
   if (result.status !== 0) {
     throw new CliError(`sam deploy exited with code ${result.status ?? 1}`);
   }
+}
+
+// A code-only update of the functions already in a deployed stack. Much faster than
+// a full deploy, but it can only change code: routes, memory and variables live in
+// the template, so those still need a whole-project deploy.
+export function samSyncCode(
+  cwd: string,
+  target: DeployTarget,
+  resourceIds: string[],
+  parameterOverrides: string[]
+): void {
+  const args = ["sync", "--code", ...targetArgs(target)];
+
+  for (const resourceId of resourceIds) {
+    args.push("--resource-id", resourceId);
+  }
+
+  if (parameterOverrides.length > 0) {
+    args.push("--parameter-overrides", ...parameterOverrides);
+  }
+
+  logger.info(
+    `\n> sam sync --code --stack-name ${target.stackName} ${resourceIds
+      .map((id) => `--resource-id ${id}`)
+      .join(" ")}\n`
+  );
+
+  const result = spawnSync("sam", args, { cwd, stdio: "inherit", shell: USE_SHELL });
+
+  if (result.error) {
+    throw new CliError(`Failed to run sam sync: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new CliError(`sam sync exited with code ${result.status ?? 1}`);
+  }
+}
+
+// A code sync updates functions in place, so there has to be a stack holding them.
+export function stackExists(target: DeployTarget): boolean {
+  const args = [
+    "cloudformation",
+    "describe-stacks",
+    "--stack-name",
+    target.stackName,
+    "--region",
+    target.region,
+    "--query",
+    "Stacks[0].StackStatus",
+    "--output",
+    "text",
+  ];
+
+  if (target.profile) {
+    args.push("--profile", target.profile);
+  }
+
+  const result = spawnSync("aws", args, { encoding: "utf8", shell: USE_SHELL });
+
+  return !result.error && result.status === 0;
 }
 
 // Read back through the AWS CLI rather than parsing sam's output, which changes

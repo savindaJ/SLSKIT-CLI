@@ -1,5 +1,8 @@
-import { DEFAULT_ENVIRONMENT } from "../../core/environments.js";
-import { buildSlessManifest } from "./manifest.js";
+import {
+  APP_ENVIRONMENT_KEY,
+  DEFAULT_ENVIRONMENT,
+} from "../../core/environments.js";
+import { buildProjectManifest } from "./manifest.js";
 import {
   LAMBDA_APPS,
   SRC_DIR,
@@ -12,7 +15,6 @@ import type { InitAnswers, ServiceFunction } from "./types.js";
 import { loggerExt } from "./templates/helpers.js";
 import {
   environmentDotenv,
-  envExample,
   gitignore,
   packageJson,
   readme,
@@ -28,7 +30,7 @@ import {
 } from "./templates/shared-code.js";
 import { nodeHandler, nodeService } from "./templates/node.js";
 import { pythonHandler, pythonService } from "./templates/python.js";
-import { samRootTemplate, samServiceTemplate } from "./templates/sam.js";
+import { samFlatTemplate, samRootTemplate, samServiceTemplate } from "./templates/sam.js";
 
 function handlerSource(
   answers: InitAnswers,
@@ -50,6 +52,15 @@ function serviceSource(answers: InitAnswers, fn: ServiceFunction): string {
   return nodeService(answers, fn, answers.runtime === "typescript");
 }
 
+function dotenvKeys(body: string): string[] {
+  return body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#") && line.includes("="))
+    .map((line) => line.slice(0, line.indexOf("=")).trim())
+    .filter((key) => key && key !== APP_ENVIRONMENT_KEY);
+}
+
 export function buildFileMap(
   answers: InitAnswers,
   envKeys: string[] = []
@@ -60,18 +71,14 @@ export function buildFileMap(
     "package.json": packageJson(answers),
   };
 
-  // The environment file is always generated; .env stays for tooling that reads it
-  // directly (Prisma), and only exists when there is a database to configure.
-  files[`.env.${DEFAULT_ENVIRONMENT}`] = environmentDotenv(
-    DEFAULT_ENVIRONMENT,
-    answers.database
-  );
+  // Exactly one environment file. Every other environment is created later by
+  // "slskit env add", which writes its own .env.<name> alongside this one.
+  const dotenv = environmentDotenv(DEFAULT_ENVIRONMENT, answers.database);
+  files[`.env.${DEFAULT_ENVIRONMENT}`] = dotenv;
 
-  const env = envExample(answers.database);
-  if (env) {
-    files[".env.example"] = env;
-    files[".env"] = env;
-  }
+  // Whatever init seeds into that file (DATABASE_URL and friends) is an ordinary
+  // stage variable, so the templates have to declare a parameter for it too.
+  const keys = [...new Set([...envKeys, ...dotenvKeys(dotenv)])].sort();
 
   if (answers.runtime === "typescript") {
     files["tsconfig.json"] = tsconfig(answers);
@@ -88,7 +95,9 @@ export function buildFileMap(
     }
   }
 
-  files["template.yaml"] = samRootTemplate(answers, LAMBDA_APPS, envKeys);
+  files["template.yaml"] = answers.sharedApi
+    ? samFlatTemplate(answers, LAMBDA_APPS, keys)
+    : samRootTemplate(answers, LAMBDA_APPS, keys);
 
   const sharedDir = sharedCodeDir(answers);
   const isNodeLayer = answers.layer && answers.runtime !== "python";
@@ -122,7 +131,9 @@ export function buildFileMap(
       files[`${SRC_DIR}/services/${app.name}/__init__.py`] = "";
     }
 
-    files[serviceTemplatePath(app.name)] = samServiceTemplate(answers, app, envKeys);
+    if (!answers.sharedApi) {
+      files[serviceTemplatePath(app.name)] = samServiceTemplate(answers, app, keys);
+    }
 
     for (const fn of app.functions) {
       if (answers.runtime === "python") {
@@ -138,8 +149,8 @@ export function buildFileMap(
     }
   }
 
-  files["sless.json"] = `${JSON.stringify(
-    buildSlessManifest(answers, LAMBDA_APPS, Object.keys(files)),
+  files["slskit.json"] = `${JSON.stringify(
+    buildProjectManifest(answers, LAMBDA_APPS, Object.keys(files)),
     null,
     2
   )}\n`;

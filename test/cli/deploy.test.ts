@@ -169,7 +169,7 @@ describe("slskit deploy command", () => {
     expect(deploy).toMatch(/--stack-name shop-dev/);
     expect(deploy).toMatch(/--region us-east-1/);
     expect(deploy).toMatch(/--profile work/);
-    expect(deploy).toMatch(/AppEnvironment=dev/);
+    expect(deploy).toMatch(/ParameterKey=AppEnvironment,ParameterValue="dev"/);
     removeDir(dir);
   });
 
@@ -199,7 +199,7 @@ describe("slskit deploy command", () => {
     const deploy = samCalls().find((call) => call.startsWith("deploy"))!;
     expect(deploy).toMatch(/--stack-name shop-production/);
     expect(deploy).toMatch(/--region eu-west-2/);
-    expect(deploy).toMatch(/AppEnvironment=production/);
+    expect(deploy).toMatch(/ParameterKey=AppEnvironment,ParameterValue="production"/);
     removeDir(dir);
   });
 
@@ -212,7 +212,7 @@ describe("slskit deploy command", () => {
     await runProgram(["deploy", "--yes"], { cwd: root });
 
     expect(samCalls().find((call) => call.startsWith("deploy"))!).toMatch(
-      /EnvLogLevel=warn/
+      /ParameterKey=EnvLogLevel,ParameterValue="warn"/
     );
     removeDir(dir);
   });
@@ -255,6 +255,129 @@ describe("slskit deploy command", () => {
 
     expect(samCalls()).not.toContain("build");
     expect(samCalls().some((call) => call.startsWith("deploy"))).toBe(true);
+    removeDir(dir);
+  });
+
+  it("syncs only one function's code with --function", async () => {
+    const { dir, root } = await project("slskit-dep-onefn-");
+    await configureDev(root);
+    mockSpawnSync.mockClear();
+
+    const result = await runProgram(["deploy", "--yes", "--function", "login"], {
+      cwd: root,
+    });
+
+    expect(result.status).toBe(0);
+    const sync = samCalls().find((call) => call.startsWith("sync"))!;
+    expect(sync).toMatch(/--code/);
+    expect(sync).toMatch(/--resource-id AuthStack\/LoginFunction/);
+    expect(sync).not.toMatch(/RegisterFunction/);
+    // A code sync builds what it needs itself.
+    expect(samCalls()).not.toContain("build");
+    expect(samCalls().some((call) => call.startsWith("deploy"))).toBe(false);
+    removeDir(dir);
+  });
+
+  it("syncs every function in a service with --service", async () => {
+    const { dir, root } = await project("slskit-dep-onesvc-");
+    await configureDev(root);
+    mockSpawnSync.mockClear();
+
+    await runProgram(["deploy", "--yes", "--service", "auth"], { cwd: root });
+
+    const sync = samCalls().find((call) => call.startsWith("sync"))!;
+    expect(sync).toMatch(/--resource-id AuthStack\/LoginFunction/);
+    expect(sync).toMatch(/--resource-id AuthStack\/RegisterFunction/);
+    expect(sync).not.toMatch(/ProductStack/);
+    removeDir(dir);
+  });
+
+  it("carries the environment's variables into a scoped sync", async () => {
+    const { dir, root } = await project("slskit-dep-syncvars-");
+    await configureDev(root);
+    await runProgram(["env", "set", "LOG_LEVEL=warn"], { cwd: root });
+    mockSpawnSync.mockClear();
+
+    await runProgram(["deploy", "--yes", "--service", "auth"], { cwd: root });
+
+    expect(samCalls().find((call) => call.startsWith("sync"))!).toMatch(
+      /ParameterKey=EnvLogLevel,ParameterValue="warn"/
+    );
+    removeDir(dir);
+  });
+
+  it("rejects an unknown service or function before calling AWS", async () => {
+    const { dir, root } = await project("slskit-dep-unknown-");
+    await configureDev(root);
+    mockSpawnSync.mockClear();
+
+    const service = await runProgram(["deploy", "--yes", "--service", "billing"], {
+      cwd: root,
+    });
+    expect(service.status).not.toBe(0);
+    expect(errorText()).toMatch(/Service "billing" was not found/);
+
+    const fn = await runProgram(["deploy", "--yes", "--function", "nope"], { cwd: root });
+    expect(fn.status).not.toBe(0);
+    expect(errorText()).toMatch(/Function "nope" was not found/);
+
+    expect(samCalls().join("\n")).not.toMatch(/sync/);
+    // Resolving a name is local, so it must not cost a round trip to AWS.
+    expect(
+      mockSpawnSync.mock.calls.filter(([cmd, args]) => cmd === "aws" && args[0] === "sts")
+    ).toHaveLength(0);
+    removeDir(dir);
+  });
+
+  it("refuses --service and --function together", async () => {
+    const { dir, root } = await project("slskit-dep-both-");
+    await configureDev(root);
+
+    const result = await runProgram(
+      ["deploy", "--yes", "--service", "auth", "--function", "login"],
+      { cwd: root }
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(errorText()).toMatch(/either "--service" or "--function", not both/);
+    removeDir(dir);
+  });
+
+  // A code sync updates functions inside a stack; it cannot create one.
+  it("says to deploy everything first when the stack does not exist", async () => {
+    const { dir, root } = await project("slskit-dep-nostack-");
+    await configureDev(root);
+
+    mockSpawnSync.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === "aws" && args[0] === "sts") {
+        return { error: null, status: 0, stdout: identity() };
+      }
+      if (cmd === "aws" && args[0] === "cloudformation") {
+        return { error: null, status: 255, stderr: "does not exist" };
+      }
+      return { error: null, status: 0, stdout: "" };
+    });
+
+    const result = await runProgram(["deploy", "--yes", "--function", "login"], {
+      cwd: root,
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(errorText()).toMatch(/does not exist yet/);
+    expect(errorText()).toMatch(/slskit deploy dev --all/);
+    expect(samCalls().join("\n")).not.toMatch(/sync/);
+    removeDir(dir);
+  });
+
+  it("still deploys everything when no scope is given", async () => {
+    const { dir, root } = await project("slskit-dep-default-");
+    await configureDev(root);
+    mockSpawnSync.mockClear();
+
+    await runProgram(["deploy", "--yes"], { cwd: root });
+
+    expect(samCalls().some((call) => call.startsWith("deploy"))).toBe(true);
+    expect(samCalls().join("\n")).not.toMatch(/sync/);
     removeDir(dir);
   });
 

@@ -5,6 +5,7 @@ import {
   minimalAnswers,
   mongooseAnswers,
   pythonAnswers,
+  sharedApiAnswers,
 } from "../helpers/fixtures";
 
 describe("buildFileMap", () => {
@@ -14,7 +15,7 @@ describe("buildFileMap", () => {
     expect(files["package.json"]).toBeDefined();
     expect(files["README.md"]).toBeDefined();
     expect(files[".gitignore"]).toBeDefined();
-    expect(files["sless.json"]).toBeDefined();
+    expect(files["slskit.json"]).toBeDefined();
     expect(files["template.yaml"]).toBeDefined();
   });
 
@@ -32,8 +33,8 @@ describe("buildFileMap", () => {
   it("writes one template per service next to that service's handlers", () => {
     const files = buildFileMap(fullStackAnswers);
 
-    expect(files["src/functions/auth/template.yaml"]).toMatch(/Description: auth service/);
-    expect(files["src/functions/product/template.yaml"]).toMatch(
+    expect(files["templates/auth.yaml"]).toMatch(/Description: auth service/);
+    expect(files["templates/product.yaml"]).toMatch(
       /Description: product service/
     );
   });
@@ -43,16 +44,16 @@ describe("buildFileMap", () => {
 
     expect(files["template.yaml"]).toMatch(/AWS::Serverless::Application/);
     expect(files["template.yaml"]).toMatch(
-      /Location: src\/functions\/auth\/template\.yaml/
+      /Location: templates\/auth\.yaml/
     );
     expect(files["template.yaml"]).toMatch(
-      /Location: src\/functions\/product\/template\.yaml/
+      /Location: templates\/product\.yaml/
     );
   });
 
   it("gives each service its own HTTP API so SAM resolves it in-template", () => {
     const files = buildFileMap(fullStackAnswers);
-    const auth = files["src/functions/auth/template.yaml"];
+    const auth = files["templates/auth.yaml"];
 
     expect(auth).toMatch(/AWS::Serverless::HttpApi/);
     expect(auth).toMatch(/ApiId: !Ref HttpApi\b/);
@@ -62,7 +63,7 @@ describe("buildFileMap", () => {
 
   it("declares the shared layer inside each service template", () => {
     const files = buildFileMap(fullStackAnswers);
-    const auth = files["src/functions/auth/template.yaml"];
+    const auth = files["templates/auth.yaml"];
 
     expect(auth).toMatch(/SharedLayer/);
     expect(auth).toMatch(/- !Ref SharedLayer\b/);
@@ -70,38 +71,38 @@ describe("buildFileMap", () => {
 
   it("points the SAM layer ContentUri at the layer dir, relative to the service template", () => {
     const files = buildFileMap(fullStackAnswers);
-    expect(files["src/functions/auth/template.yaml"]).toMatch(
-      /ContentUri: \.\.\/\.\.\/shared\/nodejs/
+    expect(files["templates/auth.yaml"]).toMatch(
+      /ContentUri: \.\.\/src\/shared\/nodejs/
     );
   });
 
   it("uses the project root as CodeUri so npm install finds package.json", () => {
     const files = buildFileMap(fullStackAnswers);
-    const auth = files["src/functions/auth/template.yaml"];
+    const auth = files["templates/auth.yaml"];
 
-    expect(auth).toMatch(/CodeUri: \.\.\/\.\.\/\.\.\//);
+    expect(auth).toMatch(/CodeUri: \.\.\//);
     expect(auth).toMatch(/Handler: src\/functions\/auth\/login\/handler\.handler/);
     expect(auth).toMatch(/- src\/functions\/auth\/login\/handler\.ts/);
   });
 
   it("uses a dotted root-relative handler path for python", () => {
     const files = buildFileMap(pythonAnswers);
-    expect(files["src/functions/auth/template.yaml"]).toMatch(
+    expect(files["templates/auth.yaml"]).toMatch(
       /Handler: src\.functions\.auth\.login\.handler\.handler/
     );
   });
 
   it("points the SAM layer ContentUri at nodejs for a Node layer", () => {
     const files = buildFileMap({ ...mongooseAnswers, layer: true });
-    expect(files["src/functions/auth/template.yaml"]).toMatch(
-      /ContentUri: \.\.\/\.\.\/shared\/nodejs/
+    expect(files["templates/auth.yaml"]).toMatch(
+      /ContentUri: \.\.\/src\/shared\/nodejs/
     );
   });
 
   it("points the SAM layer ContentUri at python for a Python layer", () => {
     const files = buildFileMap(pythonAnswers);
-    expect(files["src/functions/auth/template.yaml"]).toMatch(
-      /ContentUri: \.\.\/\.\.\/shared\/python/
+    expect(files["templates/auth.yaml"]).toMatch(
+      /ContentUri: \.\.\/src\/shared\/python/
     );
   });
 
@@ -189,8 +190,8 @@ describe("buildFileMap", () => {
   it("generates a root stack plus one template per application", () => {
     const files = buildFileMap(mongooseAnswers);
     expect(files["template.yaml"]).toMatch(/AWS::Serverless::Application/);
-    expect(files["src/functions/auth/template.yaml"]).toBeDefined();
-    expect(files["src/functions/product/template.yaml"]).toBeDefined();
+    expect(files["templates/auth.yaml"]).toBeDefined();
+    expect(files["templates/product.yaml"]).toBeDefined();
     expect(Object.keys(files).filter((f) => f.endsWith(".yml"))).toEqual([]);
   });
 
@@ -199,6 +200,13 @@ describe("buildFileMap", () => {
     expect(files["tsconfig.json"]).toMatch(/"strict": true/);
     expect(files["tsconfig.json"]).toMatch(/"src\/\*\*\/\*\.ts"/);
     expect(files["tsconfig.json"]).toMatch(/\.\/src\/shared\/nodejs\/\*/);
+
+    // .aws-sam holds a full copy of the project after "sam build"; loading it as a
+    // second TypeScript program is what makes editors report phantom missing files.
+    const parsed = JSON.parse(files["tsconfig.json"]) as { exclude: string[] };
+    expect(parsed.exclude).toContain(".aws-sam");
+    expect(parsed.exclude).toContain("node_modules");
+    expect(parsed.exclude).toContain("dist");
   });
 
   it("adds prisma generate and migrate scripts when database is prisma", () => {
@@ -211,9 +219,13 @@ describe("buildFileMap", () => {
       scripts: Record<string, string>;
     };
 
-    expect(pkg.scripts["prisma:generate"]).toBe("prisma generate");
-    expect(pkg.scripts["prisma:migrate"]).toBe("prisma migrate dev");
-    expect(pkg.scripts["prisma:deploy"]).toBe("prisma migrate deploy");
+    // The Prisma CLI only reads ".env", so every script is pointed at the
+    // environment file the project actually ships with.
+    expect(pkg.scripts["prisma:generate"]).toBe("dotenv -e .env.dev -- prisma generate");
+    expect(pkg.scripts["prisma:migrate"]).toBe("dotenv -e .env.dev -- prisma migrate dev");
+    expect(pkg.scripts["prisma:deploy"]).toBe(
+      "dotenv -e .env.dev -- prisma migrate deploy"
+    );
     expect(files["README.md"]).toMatch(/npm run prisma:migrate/);
   });
 
@@ -261,8 +273,8 @@ describe("buildFileMap", () => {
 
   it("writes memory size into each service template", () => {
     const files = buildFileMap({ ...fullStackAnswers, memorySize: 2048 });
-    expect(files["src/functions/auth/template.yaml"]).toMatch(/MemorySize: 2048/);
-    expect(files["src/functions/product/template.yaml"]).toMatch(/MemorySize: 2048/);
+    expect(files["templates/auth.yaml"]).toMatch(/MemorySize: 2048/);
+    expect(files["templates/product.yaml"]).toMatch(/MemorySize: 2048/);
   });
 
   it("generates prisma schema when database is prisma", () => {
@@ -273,8 +285,36 @@ describe("buildFileMap", () => {
     });
 
     expect(files["prisma/schema.prisma"]).toBeDefined();
-    expect(files[".env.example"]).toBeDefined();
+    expect(files[".env.dev"]).toMatch(/DATABASE_URL=/);
     expect(files["src/shared/logger.ts"]).toMatch(/export const logger/);
+  });
+
+  // DATABASE_URL used to be a hardcoded parameter with no default and no override,
+  // which made SAM substitute the parameter's own name as its value at runtime.
+  it("wires a seeded database variable through the stage parameter mechanism", () => {
+    const files = buildFileMap({
+      ...minimalAnswers,
+      runtime: "typescript",
+      database: "prisma",
+    });
+
+    expect(files["template.yaml"]).toMatch(/EnvDatabaseUrl:/);
+    expect(files["templates/auth.yaml"]).toMatch(
+      /DATABASE_URL: !Ref EnvDatabaseUrl/
+    );
+    expect(files["templates/auth.yaml"]).not.toMatch(/^ {2}DatabaseUrl:/m);
+  });
+
+  it("gives every stage parameter an empty default and NoEcho", () => {
+    const files = buildFileMap({
+      ...minimalAnswers,
+      runtime: "typescript",
+      database: "prisma",
+    });
+
+    expect(files["template.yaml"]).toMatch(
+      /EnvDatabaseUrl:\n {4}Type: String\n {4}Default: ""\n {4}NoEcho: true/
+    );
   });
 
   it("generates handlers and services for every lambda app function", () => {
@@ -290,7 +330,7 @@ describe("buildFileMap", () => {
 
   it("attaches HTTP events when apiGateway is enabled", () => {
     const files = buildFileMap(fullStackAnswers);
-    const auth = files["src/functions/auth/template.yaml"];
+    const auth = files["templates/auth.yaml"];
 
     expect(auth).toMatch(/Type: HttpApi/);
     expect(auth).toMatch(/\/auth\/login/);
@@ -298,14 +338,65 @@ describe("buildFileMap", () => {
 
   it("omits HTTP events when apiGateway is disabled", () => {
     const files = buildFileMap(minimalAnswers);
-    expect(files["src/functions/auth/template.yaml"]).not.toMatch(/Events:/);
+    expect(files["templates/auth.yaml"]).not.toMatch(/Events:/);
   });
 
   it("generates each service's DynamoDB table in its own template", () => {
     const files = buildFileMap(fullStackAnswers);
 
-    expect(files["src/functions/auth/template.yaml"]).toMatch(/UsersTable/);
-    expect(files["src/functions/auth/template.yaml"]).not.toMatch(/ProductsTable:/);
-    expect(files["src/functions/product/template.yaml"]).toMatch(/ProductsTable/);
+    expect(files["templates/auth.yaml"]).toMatch(/UsersTable/);
+    expect(files["templates/auth.yaml"]).not.toMatch(/ProductsTable:/);
+    expect(files["templates/product.yaml"]).toMatch(/ProductsTable/);
+  });
+});
+
+// SAM refuses an ApiId that points at another template ("ApiId must be a valid
+// reference to an 'AWS::Serverless::HttpApi' resource in same template"), so sharing
+// one API Gateway has to mean one flat template rather than a stack per service.
+describe("buildFileMap with one shared API Gateway", () => {
+  const files = () => buildFileMap(sharedApiAnswers);
+
+  it("emits a single template and no per-service ones", () => {
+    const generated = files();
+
+    expect(generated["template.yaml"]).toBeDefined();
+    for (const app of LAMBDA_APPS) {
+      expect(generated[`src/functions/${app.name}/template.yaml`]).toBeUndefined();
+    }
+  });
+
+  it("declares exactly one HTTP API that every function attaches to", () => {
+    const root = files()["template.yaml"];
+    const apis = root.match(/Type: AWS::Serverless::HttpApi/g) ?? [];
+    const attachments = root.match(/ApiId: !Ref HttpApi$/gm) ?? [];
+    const functions = LAMBDA_APPS.flatMap((app) => app.functions);
+
+    expect(apis).toHaveLength(1);
+    expect(attachments).toHaveLength(functions.length);
+  });
+
+  it("outputs one URL rather than one per service", () => {
+    const root = files()["template.yaml"];
+
+    expect(root).toMatch(/^ {2}ApiUrl:$/m);
+    expect(root).not.toMatch(/AuthApiUrl:/);
+  });
+
+  // The flat template is the project root, not three levels down inside a service.
+  it("points CodeUri and the layer at the project root", () => {
+    const root = files()["template.yaml"];
+
+    expect(root).toMatch(/CodeUri: \.\//);
+    expect(root).not.toMatch(/CodeUri: \.\.\//);
+    expect(root).toMatch(/ContentUri: src\/shared\/nodejs/);
+  });
+
+  it("records the layout so later commands regenerate the same shape", () => {
+    const manifest = JSON.parse(files()["slskit.json"]) as {
+      apiGateway: { perService: boolean; templates: string[] };
+    };
+
+    expect(manifest.apiGateway.perService).toBe(false);
+    expect(manifest.apiGateway.templates).toEqual(["template.yaml"]);
   });
 });

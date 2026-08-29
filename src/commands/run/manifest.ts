@@ -1,18 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { CliError } from "../../core/errors.js";
-import type { SlessManifest } from "./types.js";
+import { manifestPathFor } from "../../core/environments.js";
+import type { ProjectManifestFile } from "./types.js";
 
-export function readManifest(cwd: string): SlessManifest {
-  const manifestPath = path.join(cwd, "sless.json");
+export function readManifest(cwd: string): ProjectManifestFile {
+  const manifestPath = manifestPathFor(cwd);
 
-  if (!fs.existsSync(manifestPath)) {
+  if (!manifestPath) {
     throw new CliError(
-      `No sless.json found in ${cwd}. Run "slskit init" first, or run "slskit run" from your project root.`
+      `No slskit.json found in ${cwd}. Run "slskit init" first, or run "slskit run" from your project root.`
     );
   }
 
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as SlessManifest;
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as ProjectManifestFile;
 
   if (manifest.framework?.id !== "sam") {
     throw new CliError(

@@ -24,15 +24,16 @@ function run(cwd: string, command: string, args: string[], env?: NodeJS.ProcessE
   }
 }
 
-// .env holds real credentials, so --force must never clobber one that already exists.
-const NEVER_OVERWRITE = new Set([".env"]);
+// An environment file holds real credentials, so --force must never clobber one.
+const isEnvironmentFile = (relativePath: string): boolean =>
+  relativePath.startsWith(".env");
 
 function writeFiles(root: string, files: Record<string, string>): void {
   for (const [relativePath, contents] of Object.entries(files)) {
     const fullPath = path.join(root, relativePath);
 
-    if (NEVER_OVERWRITE.has(relativePath) && fs.existsSync(fullPath)) {
-      logger.info(`Kept existing ${relativePath} (see ${relativePath}.example for new keys)`);
+    if (isEnvironmentFile(relativePath) && fs.existsSync(fullPath)) {
+      logger.info(`Kept existing ${relativePath} rather than overwriting its values`);
       continue;
     }
 

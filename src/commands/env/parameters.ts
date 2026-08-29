@@ -7,6 +7,7 @@ import {
 import type { ProjectManifest } from "../../core/environments.js";
 import { envParameterName } from "../init/templates/helpers.js";
 import { dotenvFileName, readDotenv } from "./dotenv.js";
+import { projectEnvKeys } from "./keys.js";
 
 export interface ParameterOverride {
   name: string;
@@ -26,12 +27,26 @@ export function parameterOverrides(
     { name: APP_ENVIRONMENT_PARAM, value: environment },
   ];
 
-  const secrets = readDotenv(cwd, environment);
+  const fileValues = readDotenv(cwd, environment);
+  const declared = config.variables ?? {};
 
-  for (const key of Object.keys(config.variables ?? {}).sort()) {
-    const def = config.variables![key];
-    const source = envVarSource(def);
+  // The whole project's key set, not just this environment's: templates are shared,
+  // so every parameter they declare has to be resolvable from here.
+  for (const key of projectEnvKeys(cwd, manifest)) {
+    const def = declared[key];
     const name = envParameterName(key);
+
+    if (!def) {
+      // Undeclared: it exists only because someone put it in a .env file. Stages
+      // that leave it out fall through to the parameter's empty default.
+      const value = fileValues[key];
+      if (value !== undefined && value !== "") {
+        overrides.push({ name, value });
+      }
+      continue;
+    }
+
+    const source = envVarSource(def);
 
     if (source === "ssm") {
       // A CloudFormation dynamic reference: AWS resolves it at deploy time, so the
@@ -41,7 +56,7 @@ export function parameterOverrides(
     }
 
     if (source === "secret") {
-      const value = secrets[key];
+      const value = fileValues[key];
       if (value === undefined) {
         throw new CliError(
           `Variable "${key}" is marked secret for environment "${environment}" but is missing from ${dotenvFileName(environment)}.\nSet it with: slskit env set ${key}=<value> --secret --env ${environment}`
@@ -57,6 +72,17 @@ export function parameterOverrides(
   return overrides;
 }
 
+// The shorthand "Key=Value" form the AWS SAM CLI also accepts splits on whitespace,
+// so a value with a space in it is silently truncated -- "hello world" arrives as
+// "hello". The explicit ParameterKey/ParameterValue form with the value quoted is the
+// only one that survives spaces, commas and equals signs alike. Backslashes are
+// deliberately left alone: escaping them doubles them.
+function quoteValue(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
 export function toCliArguments(overrides: ParameterOverride[]): string[] {
-  return overrides.map(({ name, value }) => `${name}=${value}`);
+  return overrides.map(
+    ({ name, value }) => `ParameterKey=${name},ParameterValue=${quoteValue(value)}`
+  );
 }

@@ -27,7 +27,9 @@ export interface ProjectManifest {
   runtime: { id: RuntimeId };
   framework: { id: string };
   database: { id: DatabaseId };
-  apiGateway: { enabled: boolean };
+  // perService is false when every function shares one API Gateway, which means the
+  // project is a single flat template rather than a stack per service.
+  apiGateway: { enabled: boolean; perService?: boolean };
   layer: { enabled: boolean };
   functions: { memorySize: MemorySize };
   applications: ManifestApplication[];

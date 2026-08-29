@@ -46,7 +46,7 @@ function errorText(): string {
 }
 
 function readManifest(root: string): Record<string, any> {
-  return JSON.parse(fs.readFileSync(path.join(root, "sless.json"), "utf8"));
+  return JSON.parse(fs.readFileSync(path.join(root, "slskit.json"), "utf8"));
 }
 
 // Dispatches on the aws subcommand so each test can describe the CLI's behaviour
@@ -113,14 +113,14 @@ describe("slskit configure command", () => {
     }
   });
 
-  it("errors when sless.json is missing", async () => {
+  it("errors when slskit.json is missing", async () => {
     const dir = createTempDir("slskit-cfg-cli-missing-");
     const result = await runProgram(["configure", "--profile", "work", "--region", "us-east-1"], {
       cwd: dir,
     });
 
     expect(result.status).not.toBe(0);
-    expect(errorText()).toMatch(/No sless\.json found/);
+    expect(errorText()).toMatch(/No slskit\.json found/);
     removeDir(dir);
   });
 
@@ -263,7 +263,7 @@ describe("slskit configure command", () => {
 
     await runProgram(["configure"], { cwd: root });
 
-    const raw = fs.readFileSync(path.join(root, "sless.json"), "utf8");
+    const raw = fs.readFileSync(path.join(root, "slskit.json"), "utf8");
     expect(raw).not.toMatch(/AKIASECRETVALUE/);
     expect(raw).not.toMatch(/supersecret/);
     removeDir(dir);

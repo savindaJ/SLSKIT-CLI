@@ -6,14 +6,18 @@ import {
   sourceExt,
 } from "../init/types.js";
 import type { InitAnswers, RuntimeId, ServiceDef, ServiceFunction } from "../init/types.js";
-import { buildSlessManifest } from "../init/manifest.js";
+import { buildProjectManifest } from "../init/manifest.js";
 import { nodeHandler, nodeService, standaloneNodeService } from "../init/templates/node.js";
 import {
   pythonHandler,
   pythonService,
   standalonePythonService,
 } from "../init/templates/python.js";
-import { samRootTemplate, samServiceTemplate } from "../init/templates/sam.js";
+import {
+  samFlatTemplate,
+  samRootTemplate,
+  samServiceTemplate,
+} from "../init/templates/sam.js";
 
 export interface GeneratedFunction {
   files: Record<string, string>;
@@ -49,7 +53,7 @@ function serviceSource(
 
 // Attaches `fn` to `appName` (existing or new) and regenerates every file that must
 // stay consistent with it: the handler, the service, that app's own infra template,
-// the root template.yaml when a SAM app is brand new, and sless.json.
+// the root template.yaml when a SAM app is brand new, and slskit.json.
 export function generateFunction(
   answers: InitAnswers,
   apps: ServiceDef[],
@@ -86,25 +90,35 @@ export function generateFunction(
     functions: [...(apps.find((app) => app.name === appName)?.functions ?? []), fn],
   };
 
-  const appTemplatePath = serviceTemplatePath(appName);
-  files[appTemplatePath] = samServiceTemplate(answers, targetApp, envKeys);
-
   const updatedApps = isNewApp
     ? [...apps, targetApp]
     : apps.map((app) => (app.name === appName ? targetApp : app));
 
+  // With one shared API Gateway every function lives in the single root template,
+  // so there is no per-service template to update -- and the root always changes.
+  const appTemplatePath = answers.sharedApi
+    ? "template.yaml"
+    : serviceTemplatePath(appName);
+
   let rootTemplatePath: string | undefined;
-  if (isNewApp) {
-    rootTemplatePath = "template.yaml";
-    files[rootTemplatePath] = samRootTemplate(answers, updatedApps, envKeys);
+
+  if (answers.sharedApi) {
+    files[appTemplatePath] = samFlatTemplate(answers, updatedApps, envKeys);
+  } else {
+    files[appTemplatePath] = samServiceTemplate(answers, targetApp, envKeys);
+
+    if (isNewApp) {
+      rootTemplatePath = "template.yaml";
+      files[rootTemplatePath] = samRootTemplate(answers, updatedApps, envKeys);
+    }
   }
 
   const generatedFiles = Array.from(
     new Set([...existingGeneratedFiles, ...Object.keys(files)])
   ).sort();
 
-  files["sless.json"] = `${JSON.stringify(
-    buildSlessManifest(answers, updatedApps, generatedFiles),
+  files["slskit.json"] = `${JSON.stringify(
+    buildProjectManifest(answers, updatedApps, generatedFiles),
     null,
     2
   )}\n`;

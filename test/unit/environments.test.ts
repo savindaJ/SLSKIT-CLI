@@ -140,7 +140,7 @@ describe("writeEnvironment", () => {
   it("preserves unrelated manifest keys and keeps the first default", () => {
     const dir = createTempDir("slskit-envcore-");
     fs.writeFileSync(
-      path.join(dir, "sless.json"),
+      path.join(dir, "slskit.json"),
       JSON.stringify({ name: "shop", applications: [{ name: "auth" }] })
     );
 

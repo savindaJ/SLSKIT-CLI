@@ -16,6 +16,10 @@ export function registerRunCommand(program: Command): void {
     .option("-p, --port <port>", "Local API Gateway port", "3000")
     .option("--no-build", 'Skip "sam build" before starting the local API')
     .option(
+      "--no-watch",
+      "Do not rebuild on file changes (stop and re-run to pick up edits)"
+    )
+    .option(
       "-e, --env <name>",
       "Environment whose variables to run with (default: the default environment)"
     )

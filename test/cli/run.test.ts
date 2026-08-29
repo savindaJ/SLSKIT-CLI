@@ -1,6 +1,7 @@
 jest.mock("node:child_process", () => ({
   ...jest.requireActual("node:child_process"),
   spawnSync: jest.fn(),
+  spawn: jest.fn(),
 }));
 
 const cliLogs = { errors: [] as string[], infos: [] as string[] };
@@ -18,15 +19,24 @@ jest.mock("../../src/core/logger", () => ({
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { scaffoldProject } from "../../src/commands/init/scaffold";
 import { minimalAnswers } from "../helpers/fixtures";
 import { createTempDir, removeDir, runProgram } from "../helpers/cli";
+import { fakeChild } from "../helpers/child";
 
 const mockSpawnSync = spawnSync as unknown as jest.Mock;
+const mockSpawn = spawn as unknown as jest.Mock;
+
+// "sam local start-api" is spawned rather than run to completion, so both mocks have
+// to be read together to see everything the command asked sam to do.
+const allCalls = (): [string, string[]][] => [
+  ...(mockSpawnSync.mock.calls as [string, string[]][]),
+  ...(mockSpawn.mock.calls as [string, string[]][]),
+];
 
 function callArgs(): string[] {
-  return mockSpawnSync.mock.calls.map(([, args]) => (args as string[]).join(" "));
+  return allCalls().map(([, args]) => args.join(" "));
 }
 
 describe("slskit run command", () => {
@@ -35,21 +45,23 @@ describe("slskit run command", () => {
     cliLogs.infos.length = 0;
     mockSpawnSync.mockReset();
     mockSpawnSync.mockReturnValue({ error: null, status: 0 });
+    mockSpawn.mockReset();
+    mockSpawn.mockImplementation(() => fakeChild());
   });
 
-  it("errors when sless.json is missing", async () => {
+  it("errors when slskit.json is missing", async () => {
     const dir = createTempDir("slskit-run-missing-");
     const result = await runProgram(["run"], { cwd: dir });
 
     expect(result.status).not.toBe(0);
-    expect(cliLogs.errors.join("\n")).toMatch(/No sless\.json found/);
+    expect(cliLogs.errors.join("\n")).toMatch(/No slskit\.json found/);
     removeDir(dir);
   });
 
   it("rejects a project that is not AWS SAM", async () => {
     const dir = createTempDir("slskit-run-notsam-");
     fs.writeFileSync(
-      path.join(dir, "sless.json"),
+      path.join(dir, "slskit.json"),
       JSON.stringify({ name: "demo-app", framework: { id: "serverless" } })
     );
 
@@ -119,7 +131,7 @@ describe("slskit run command", () => {
 
     await runProgram(["run"], { cwd: root });
 
-    expect(callArgs().join("\n")).toMatch(/--parameter-overrides AppEnvironment=dev/);
+    expect(callArgs().join("\n")).toMatch(/--parameter-overrides ParameterKey=AppEnvironment,ParameterValue="dev"/);
     expect(cliLogs.infos.join("\n")).toMatch(/APP_ENVIRONMENT=dev/);
     removeDir(dir);
   });
@@ -135,7 +147,7 @@ describe("slskit run command", () => {
     mockSpawnSync.mockClear();
     await runProgram(["run", "staging"], { cwd: root });
 
-    expect(callArgs().join("\n")).toMatch(/AppEnvironment=staging/);
+    expect(callArgs().join("\n")).toMatch(/ParameterKey=AppEnvironment,ParameterValue="staging"/);
     expect(cliLogs.infos.join("\n")).toMatch(/APP_ENVIRONMENT=staging/);
     removeDir(dir);
   });
@@ -151,7 +163,7 @@ describe("slskit run command", () => {
     mockSpawnSync.mockClear();
     await runProgram(["run", "--env", "staging"], { cwd: root });
 
-    expect(callArgs().join("\n")).toMatch(/AppEnvironment=staging/);
+    expect(callArgs().join("\n")).toMatch(/ParameterKey=AppEnvironment,ParameterValue="staging"/);
     removeDir(dir);
   });
 
@@ -163,7 +175,7 @@ describe("slskit run command", () => {
     mockSpawnSync.mockClear();
     await runProgram(["run"], { cwd: root });
 
-    expect(callArgs().join("\n")).toMatch(/EnvLogLevel=debug/);
+    expect(callArgs().join("\n")).toMatch(/ParameterKey=EnvLogLevel,ParameterValue="debug"/);
     removeDir(dir);
   });
 

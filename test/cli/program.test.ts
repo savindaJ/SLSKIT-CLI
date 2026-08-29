@@ -119,7 +119,7 @@ describe("slskit init command", () => {
 
     expect(result.status).toBe(0);
     const files = listFiles(`${dir}/demo-app`);
-    expect(files).toContain("sless.json");
+    expect(files).toContain("slskit.json");
     expect(files).toContain("template.yaml");
     expect(files).toContain("src/services/product/getProducts.js");
     removeDir(dir);
@@ -137,6 +137,8 @@ describe("slskit init command", () => {
         "mongo",
         "--api-gateway",
         "yes",
+        "--shared-api",
+        "no",
         "--layer",
         "yes",
         "--memory",
@@ -148,7 +150,7 @@ describe("slskit init command", () => {
     expect(result.status).toBe(0);
     const files = listFiles(`${dir}/alias-app`);
     expect(files).toContain("template.yaml");
-    expect(files).toContain("src/functions/auth/template.yaml");
+    expect(files).toContain("templates/auth.yaml");
     expect(files.filter((file) => file.endsWith(".yml"))).toEqual([]);
     removeDir(dir);
   });
@@ -232,7 +234,7 @@ describe("slskit init command", () => {
       cwd: dir,
     });
     expect(result.status).toBe(0);
-    expect(fs.existsSync(`${dir}/forced/sless.json`)).toBe(true);
+    expect(fs.existsSync(`${dir}/forced/slskit.json`)).toBe(true);
     removeDir(dir);
   });
 
@@ -258,7 +260,7 @@ describe("slskit init command", () => {
 
     expect(result.status).toBe(0);
     const template = fs.readFileSync(
-      `${dir}/mem-app/src/functions/auth/template.yaml`,
+      `${dir}/mem-app/templates/auth.yaml`,
       "utf8"
     );
     expect(template).toMatch(/MemorySize: 1024/);
@@ -277,6 +279,8 @@ describe("slskit init command", () => {
         "none",
         "--api-gateway",
         "yes",
+        "--shared-api",
+        "no",
         "--layer",
         "no",
         "--memory",
@@ -289,17 +293,17 @@ describe("slskit init command", () => {
     expect(fs.existsSync(`${dir}/gw-app/gateway`)).toBe(false);
 
     const root = fs.readFileSync(`${dir}/gw-app/template.yaml`, "utf8");
-    expect(root).toMatch(/Location: src\/functions\/auth\/template\.yaml/);
+    expect(root).toMatch(/Location: templates\/auth\.yaml/);
 
     const service = fs.readFileSync(
-      `${dir}/gw-app/src/functions/auth/template.yaml`,
+      `${dir}/gw-app/templates/auth.yaml`,
       "utf8"
     );
     expect(service).toMatch(/AWS::Serverless::HttpApi/);
     removeDir(dir);
   });
 
-  it("generates complete sless.json manifest", async () => {
+  it("generates complete slskit.json manifest", async () => {
     const dir = createTempDir("slskit-cli-manifest-");
     const result = await runProgram(
       [
@@ -311,6 +315,8 @@ describe("slskit init command", () => {
         "dynamodb",
         "--api-gateway",
         "yes",
+        "--shared-api",
+        "no",
         "--layer",
         "yes",
         "--memory",
@@ -321,7 +327,7 @@ describe("slskit init command", () => {
 
     expect(result.status).toBe(0);
     const manifest = JSON.parse(
-      fs.readFileSync(`${dir}/manifest-app/sless.json`, "utf8")
+      fs.readFileSync(`${dir}/manifest-app/slskit.json`, "utf8")
     ) as {
       apiGateway: { enabled: boolean; routes: unknown[] };
       layer: { enabled: boolean };

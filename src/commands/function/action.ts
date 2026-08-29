@@ -2,13 +2,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { CliError } from "../../core/errors.js";
-import { allEnvKeys } from "../../core/environments.js";
+import { projectEnvKeys } from "../env/keys.js";
 import { logger } from "../../core/logger.js";
 import { SRC_DIR, sameRuntimeFamily } from "../init/types.js";
 import type { ServiceFunction } from "../init/types.js";
 import { generateFunction } from "./generator.js";
 import { readProjectManifest, toInitAnswers, toServiceDefs } from "./manifest.js";
-import { collectFunctionAnswers } from "./prompts.js";
+import { collectFunctionAnswers, functionHttpPath } from "./prompts.js";
 import { ensureToolingForRuntime } from "./tooling.js";
 import type { FunctionOptions } from "./types.js";
 
@@ -38,7 +38,7 @@ export async function functionAction(options: FunctionOptions): Promise<void> {
 
   const fn: ServiceFunction = {
     name: picked.functionName,
-    httpPath: `/${picked.appName}/${picked.functionName}`,
+    httpPath: functionHttpPath(picked.appName, picked.functionName),
     method: picked.method,
     runtime: picked.runtime,
     memorySize: picked.memorySize,
@@ -53,7 +53,7 @@ export async function functionAction(options: FunctionOptions): Promise<void> {
     picked.isNewApp,
     fn,
     manifest.structure.files,
-    allEnvKeys(manifest)
+    projectEnvKeys(root, manifest)
   );
 
   for (const [relativePath, contents] of Object.entries(files)) {

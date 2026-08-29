@@ -14,6 +14,7 @@ import {
 } from "../../core/environments.js";
 import type { EnvVarDef, ProjectManifest } from "../../core/environments.js";
 import { configureAction } from "../configure/action.js";
+import { environmentEnvKeys } from "./keys.js";
 import {
   dotenvFileName,
   ensureDotenvIgnored,
@@ -162,7 +163,7 @@ export async function envRemoveAction(
     const { confirm } = await import("@inquirer/prompts");
     const count = Object.keys(config.variables ?? {}).length;
     const proceed = await confirm({
-      message: `Remove environment "${environment}" and its ${count} variable(s) from sless.json?`,
+      message: `Remove environment "${environment}" and its ${count} variable(s) from slskit.json?`,
       default: false,
     });
 
@@ -236,7 +237,7 @@ export async function envSetAction(
       throw new CliError(`A value is required: slskit env set ${key}=<value>`);
     }
     def = { value };
-    where = "sless.json";
+    where = "slskit.json";
   }
 
   const variables = { ...config.variables, [key]: def };
@@ -315,10 +316,20 @@ export async function envVarsAction(options: EnvVarsOptions): Promise<void> {
   // Always shown first: it is generated, not stored, and every name derives from it.
   logger.info(`  ${APP_ENVIRONMENT_KEY}=${environment}   (generated)`);
 
-  const keys = Object.keys(config.variables ?? {}).sort();
+  // Declared and undeclared together: a key typed straight into the .env file
+  // reaches the functions exactly like one added with "slskit env set".
+  const keys = environmentEnvKeys(cwd, manifest, environment);
 
   for (const key of keys) {
-    const def = config.variables![key];
+    const def = config.variables?.[key];
+
+    if (!def) {
+      const held = secrets[key] ?? "";
+      const shown = options.showSecrets || held === "" ? held : "********";
+      logger.info(`  ${key}=${shown}   (${dotenvFileName(environment)})`);
+      continue;
+    }
+
     const source = envVarSource(def);
 
     if (source === "ssm") {
@@ -337,13 +348,19 @@ export async function envVarsAction(options: EnvVarsOptions): Promise<void> {
       continue;
     }
 
-    logger.info(`  ${key}=${def.value ?? ""}   (sless.json)`);
+    logger.info(`  ${key}=${def.value ?? ""}   (slskit.json)`);
   }
 
+  const hidden = keys.some(
+    (key) => config.variables?.[key]?.secret || config.variables?.[key] === undefined
+  );
+
   if (keys.length === 0) {
-    logger.info("\n  No variables set yet. Add one with \"slskit env set KEY=value\".");
-  } else if (!options.showSecrets && keys.some((key) => config.variables![key].secret)) {
-    logger.info("\nRe-run with --show-secrets to reveal secret values.");
+    logger.info(
+      `\n  No variables set yet. Add one with "slskit env set KEY=value", or put it straight into ${dotenvFileName(environment)}.`
+    );
+  } else if (!options.showSecrets && hidden) {
+    logger.info("\nRe-run with --show-secrets to reveal hidden values.");
   }
 }
 

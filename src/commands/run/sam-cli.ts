@@ -1,4 +1,7 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { CliError } from "../../core/errors.js";
 import { logger } from "../../core/logger.js";
 
@@ -133,14 +136,63 @@ export function samBuild(cwd: string): void {
   }
 }
 
-export function samLocalStartApi(
+const PARTIAL_BUILD_DIR = path.join(".aws-sam", "slskit-partial");
+
+// "sam build <ResourceId>" empties the whole build directory and puts back only the
+// resource it was asked for, which would leave every other function unservable. So
+// the scoped build goes to a scratch directory and just that one artifact is moved
+// into place -- the running local API picks it up on the next request.
+export function samBuildResource(cwd: string, resourceId: string): boolean {
+  const scratch = path.join(cwd, PARTIAL_BUILD_DIR);
+  fs.rmSync(scratch, { recursive: true, force: true });
+
+  const result = spawnSync(
+    "sam",
+    ["build", resourceId, "--build-dir", PARTIAL_BUILD_DIR],
+    { cwd, stdio: "inherit", shell: USE_SHELL }
+  );
+
+  if (result.error || result.status !== 0) {
+    fs.rmSync(scratch, { recursive: true, force: true });
+    return false;
+  }
+
+  const built = path.join(scratch, resourceId);
+  const target = path.join(cwd, ".aws-sam", "build", resourceId);
+
+  if (!fs.existsSync(built)) {
+    fs.rmSync(scratch, { recursive: true, force: true });
+    return false;
+  }
+
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.renameSync(built, target);
+  fs.rmSync(scratch, { recursive: true, force: true });
+
+  return true;
+}
+
+// Unlike samBuild this never throws: a syntax error in a handler must not tear down
+// a watch session that the next save would fix.
+export function samRebuild(cwd: string): boolean {
+  const result = spawnSync("sam", ["build"], {
+    cwd,
+    stdio: "inherit",
+    shell: USE_SHELL,
+  });
+
+  return !result.error && result.status === 0;
+}
+
+export function startLocalApi(
   cwd: string,
   port: number,
   parameterOverrides: string[] = []
-): void {
+): ChildProcess {
   const overrideArgs =
     parameterOverrides.length > 0
-      ? ["--parameter-overrides", parameterOverrides.join(" ")]
+      ? ["--parameter-overrides", ...parameterOverrides]
       : [];
 
   // Values are deliberately not logged: overrides carry secrets.
@@ -150,26 +202,16 @@ export function samLocalStartApi(
       : "";
 
   logger.info(`\n> sam local start-api --port ${port}${overrideNote}`);
-  logger.info(
-    `Every application's routes are served from one local API at http://127.0.0.1:${port}`
-  );
-  logger.info("Press Ctrl+C to stop.\n");
 
-  const result = spawnSync(
+  const child = spawn(
     "sam",
     ["local", "start-api", "--port", String(port), ...overrideArgs],
     { cwd, stdio: "inherit", shell: USE_SHELL }
   );
 
-  if (result.error) {
-    throw new CliError(`Failed to run sam local start-api: ${result.error.message}`);
-  }
+  child.on("error", (error) => {
+    logger.error(`Failed to run sam local start-api: ${error.message}`);
+  });
 
-  if (result.signal) {
-    return;
-  }
-
-  if (result.status !== 0) {
-    throw new CliError(`sam local start-api exited with code ${result.status ?? 1}`);
-  }
+  return child;
 }

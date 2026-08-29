@@ -5,17 +5,17 @@ import { CliError } from "../../src/core/errors";
 import { createTempDir, removeDir } from "../helpers/cli";
 
 describe("readManifest", () => {
-  it("throws when sless.json is missing", () => {
+  it("throws when slskit.json is missing", () => {
     const dir = createTempDir("slskit-run-manifest-missing-");
     expect(() => readManifest(dir)).toThrow(CliError);
-    expect(() => readManifest(dir)).toThrow(/No sless\.json found/);
+    expect(() => readManifest(dir)).toThrow(/No slskit\.json found/);
     removeDir(dir);
   });
 
   it("throws when the project framework is not sam", () => {
     const dir = createTempDir("slskit-run-manifest-framework-");
     fs.writeFileSync(
-      path.join(dir, "sless.json"),
+      path.join(dir, "slskit.json"),
       JSON.stringify({ name: "demo", framework: { id: "serverless" } })
     );
 
@@ -26,7 +26,7 @@ describe("readManifest", () => {
   it("returns the manifest for a sam project", () => {
     const dir = createTempDir("slskit-run-manifest-ok-");
     fs.writeFileSync(
-      path.join(dir, "sless.json"),
+      path.join(dir, "slskit.json"),
       JSON.stringify({ name: "demo", framework: { id: "sam" } })
     );
 

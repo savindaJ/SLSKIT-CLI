@@ -1,15 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { CliError } from "../../core/errors.js";
+import { manifestPathFor } from "../../core/environments.js";
 import type { HttpMethod, InitAnswers, RuntimeId, ServiceDef } from "../init/types.js";
 import type { ProjectManifest } from "./types.js";
 
 export function readProjectManifest(cwd: string): ProjectManifest {
-  const manifestPath = path.join(cwd, "sless.json");
+  const manifestPath = manifestPathFor(cwd);
 
-  if (!fs.existsSync(manifestPath)) {
+  if (!manifestPath) {
     throw new CliError(
-      `No sless.json found in ${cwd}. Run "slskit init" first, or run "slskit function" from your project root.`
+      `No slskit.json found in ${cwd}. Run "slskit init" first, or run "slskit function" from your project root.`
     );
   }
 
@@ -42,6 +43,7 @@ export function toInitAnswers(manifest: ProjectManifest): InitAnswers {
     runtime: manifest.runtime.id,
     database: manifest.database.id,
     apiGateway: manifest.apiGateway.enabled,
+    sharedApi: manifest.apiGateway.enabled && manifest.apiGateway.perService === false,
     layer: manifest.layer.enabled,
     memorySize: manifest.functions.memorySize,
     force: false,

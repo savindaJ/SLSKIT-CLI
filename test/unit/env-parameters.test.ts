@@ -24,6 +24,27 @@ describe("parameterOverrides", () => {
     removeDir(dir);
   });
 
+  it("passes a key that only exists in the dotenv file", () => {
+    const dir = createTempDir("slskit-params-undeclared-");
+    setDotenvValue(dir, "production", "SOME_API_KEY", "abc123");
+
+    const overrides = parameterOverrides(dir, manifest(), "production");
+
+    expect(overrides).toContainEqual({ name: "EnvSomeApiKey", value: "abc123" });
+    removeDir(dir);
+  });
+
+  it("leaves an undeclared key out for a stage whose file omits it", () => {
+    const dir = createTempDir("slskit-params-otherstage-");
+    // Declared nowhere, present only in another environment's file.
+    setDotenvValue(dir, "dev", "DEV_ONLY", "yes");
+
+    const overrides = parameterOverrides(dir, manifest(), "production");
+
+    expect(overrides.map((each) => each.name)).not.toContain("EnvDevOnly");
+    removeDir(dir);
+  });
+
   it("passes an inline value straight through", () => {
     const dir = createTempDir("slskit-params-value-");
     const overrides = parameterOverrides(
@@ -90,12 +111,38 @@ describe("parameterOverrides", () => {
 });
 
 describe("toCliArguments", () => {
-  it("formats overrides as Key=Value pairs", () => {
+  it("formats overrides in the explicit ParameterKey form", () => {
     expect(
       toCliArguments([
         { name: "AppEnvironment", value: "dev" },
         { name: "EnvLogLevel", value: "debug" },
       ])
-    ).toEqual(["AppEnvironment=dev", "EnvLogLevel=debug"]);
+    ).toEqual([
+      'ParameterKey=AppEnvironment,ParameterValue="dev"',
+      'ParameterKey=EnvLogLevel,ParameterValue="debug"',
+    ]);
+  });
+
+  // The shorthand "Key=Value" form splits on whitespace, so "hello world" used to
+  // reach the function as "hello" with no warning of any kind.
+  it("keeps a value that contains spaces, commas or equals signs intact", () => {
+    expect(toCliArguments([{ name: "EnvGreeting", value: "a=b, hello world" }])).toEqual([
+      'ParameterKey=EnvGreeting,ParameterValue="a=b, hello world"',
+    ]);
+  });
+
+  it("escapes a double quote inside a value, and leaves backslashes alone", () => {
+    expect(toCliArguments([{ name: "EnvQuote", value: 'say "hi"' }])).toEqual([
+      'ParameterKey=EnvQuote,ParameterValue="say \\"hi\\""',
+    ]);
+    expect(toCliArguments([{ name: "EnvPath", value: "back\\slash" }])).toEqual([
+      'ParameterKey=EnvPath,ParameterValue="back\\slash"',
+    ]);
+  });
+
+  it("keeps an empty value as an explicit empty string", () => {
+    expect(toCliArguments([{ name: "EnvEmpty", value: "" }])).toEqual([
+      'ParameterKey=EnvEmpty,ParameterValue=""',
+    ]);
   });
 });

@@ -24,5 +24,5 @@ export async function initAction(options: InitOptions): Promise<void> {
   );
   logger.info("  template.yaml     (root stack)");
   logger.info(`  memory:    ${answers.memorySize} MB`);
-  logger.info("  sless.json");
+  logger.info("  slskit.json");
 }

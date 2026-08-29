@@ -104,6 +104,7 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
   let runtime = parseAlias(options.runtime, RUNTIME_ALIASES, "runtime");
   let database = parseAlias(options.database, DATABASE_ALIASES, "database");
   let apiGateway = parseYesNo(options.apiGateway, "--api-gateway");
+  let sharedApi = parseYesNo(options.sharedApi, "--shared-api");
   let layer = parseYesNo(options.layer, "--layer");
   let memorySize = parseMemory(options.memory);
 
@@ -112,12 +113,13 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
     !runtime ||
     !database ||
     apiGateway === undefined ||
+    (apiGateway !== false && sharedApi === undefined) ||
     layer === undefined ||
     memorySize === undefined;
 
   if (needsPrompt && !process.stdin.isTTY) {
     throw new CliError(
-      "Non-interactive init needs --name, --runtime, --database, --api-gateway, --layer, and --memory."
+      "Non-interactive init needs --name, --runtime, --database, --api-gateway, --shared-api, --layer, and --memory."
     );
   }
 
@@ -150,9 +152,17 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
     });
 
     apiGateway ??= await confirm({
-      message: "API Gateway? Attach every function to a single HTTP API",
+      message: "API Gateway? Expose your functions over HTTP",
       default: true,
     });
+
+    if (apiGateway) {
+      sharedApi ??= await confirm({
+        message:
+          "One shared API Gateway for every function? (no = one API per service)",
+        default: true,
+      });
+    }
 
     layer ??= await confirm({
       message: "Common Lambda layer? Use shared/ and attach it to every function",
@@ -178,6 +188,7 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
     runtime: runtime as RuntimeId,
     database: database as DatabaseId,
     apiGateway: Boolean(apiGateway),
+    sharedApi: Boolean(apiGateway) && sharedApi !== false,
     layer: Boolean(layer),
     memorySize: memorySize as MemorySize,
     force: Boolean(options.force),

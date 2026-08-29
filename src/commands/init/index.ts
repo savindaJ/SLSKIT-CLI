@@ -10,7 +10,11 @@ export function registerInitCommand(program: Command): void {
     .argument("[name]", "Project name (example: my-lambda-app)")
     .option("-r, --runtime <runtime>", "typescript | javascript | python")
     .option("--database <database>", "none | prisma | mongoose | dynamodb")
-    .option("--api-gateway <yes|no>", "Attach every function to a single HTTP API")
+    .option("--api-gateway <yes|no>", "Expose the functions over HTTP")
+    .option(
+      "--shared-api <yes|no>",
+      "One API Gateway for every function (no = one per service)"
+    )
     .option("--layer <yes|no>", "Use shared/ as a common Lambda layer")
     .option(
       "--memory <mb>",
@@ -24,6 +28,7 @@ export function registerInitCommand(program: Command): void {
           runtime: options.runtime,
           database: options.database,
           apiGateway: options.apiGateway,
+          sharedApi: options.sharedApi,
           layer: options.layer,
           memory: options.memory,
           force: options.force,

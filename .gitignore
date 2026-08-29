@@ -8,3 +8,5 @@ dist/
 test-app/
 # stray scratch file (not a build directory)
 build
+
+.claude/*

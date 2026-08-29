@@ -63,7 +63,7 @@ export function registerEnvCommand(program: Command): void {
     .description("Add or update a variable (KEY=value)")
     .argument("<assignment>", "KEY=value")
     .option("-e, --env <name>", "Environment to change (default: the default environment)")
-    .option("--secret", "Store the value in .env.<environment> instead of sless.json", false)
+    .option("--secret", "Store the value in .env.<environment> instead of slskit.json", false)
     .option("--ssm <path>", "Read the value from an SSM Parameter Store path at deploy time")
     .action((assignment: string, options: EnvSetOptions) =>
       runCommand(() => envSetAction(assignment, options))

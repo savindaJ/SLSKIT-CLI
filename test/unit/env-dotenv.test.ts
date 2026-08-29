@@ -95,8 +95,8 @@ describe("ensureDotenvIgnored", () => {
 
     expect(ensureDotenvIgnored(dir)).toBe(true);
     const body = fs.readFileSync(path.join(dir, ".gitignore"), "utf8");
+    expect(body).toMatch(/^\.env$/m);
     expect(body).toMatch(/^\.env\.\*$/m);
-    expect(body).toMatch(/^!\.env\.example$/m);
     removeDir(dir);
   });
 

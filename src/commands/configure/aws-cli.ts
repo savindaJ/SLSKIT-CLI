@@ -120,7 +120,7 @@ export interface CredentialWriteResult {
 }
 
 // Credentials are handed to the AWS CLI so they land in ~/.aws/credentials in the
-// format AWS expects — never in the project directory, and never in sless.json.
+// format AWS expects — never in the project directory, and never in slskit.json.
 // Deliberately runs without a shell so the secret is not exposed to shell parsing.
 export function setProfileCredentials(
   profile: string,

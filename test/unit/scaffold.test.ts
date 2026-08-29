@@ -69,7 +69,7 @@ describe("scaffoldProject", () => {
 
     expect(root).toBe(path.join(dir, "demo-app"));
     const files = listFiles(root);
-    expect(files).toContain("sless.json");
+    expect(files).toContain("slskit.json");
     expect(files).toContain("template.yaml");
     expect(files).toContain("src/services/auth/login.js");
     removeDir(dir);
@@ -81,25 +81,40 @@ describe("scaffoldProject", () => {
     const root = await scaffoldProject({ ...minimalAnswers, name: "." }, dir);
 
     expect(root).toBe(dir);
-    expect(fs.existsSync(path.join(dir, "sless.json"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "slskit.json"))).toBe(true);
     removeDir(dir);
   });
 });
 
 describe("writeFiles credential safety", () => {
-  it("never overwrites an existing .env on --force", async () => {
+  it("never overwrites an existing environment file on --force", async () => {
     const dir = createTempDir("slskit-env-");
     const root = path.join(dir, "env-app");
     fs.mkdirSync(root, { recursive: true });
-    fs.writeFileSync(path.join(root, ".env"), 'DATABASE_URL="postgresql://real:secret@prod/db"\n');
+    fs.writeFileSync(
+      path.join(root, ".env.dev"),
+      'APP_ENVIRONMENT=dev\nDATABASE_URL="postgresql://real:secret@prod/db"\n'
+    );
 
     await scaffoldProject(
       { ...minimalAnswers, name: "env-app", database: "prisma", runtime: "typescript", force: true },
       dir
     );
 
-    expect(fs.readFileSync(path.join(root, ".env"), "utf8")).toMatch(/real:secret@prod/);
-    expect(fs.readFileSync(path.join(root, ".env.example"), "utf8")).toMatch(/user:password/);
+    expect(fs.readFileSync(path.join(root, ".env.dev"), "utf8")).toMatch(/real:secret@prod/);
+    removeDir(dir);
+  });
+
+  it("scaffolds exactly one environment file", async () => {
+    const dir = createTempDir("slskit-envone-");
+    const root = await scaffoldProject(
+      { ...minimalAnswers, name: "one-app", database: "prisma", runtime: "typescript" },
+      dir
+    );
+
+    const envFiles = fs.readdirSync(root).filter((entry) => entry.startsWith(".env"));
+
+    expect(envFiles).toEqual([".env.dev"]);
     removeDir(dir);
   });
 });

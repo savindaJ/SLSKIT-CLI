@@ -36,7 +36,7 @@ function sampleManifest(overrides: Partial<ProjectManifest> = {}): ProjectManife
         ],
       },
     ],
-    structure: { files: ["README.md", "sless.json"] },
+    structure: { files: ["README.md", "slskit.json"] },
     ...overrides,
   };
 }
@@ -52,20 +52,20 @@ describe("readProjectManifest", () => {
     removeDir(dir);
   });
 
-  it("throws when sless.json is missing", () => {
+  it("throws when slskit.json is missing", () => {
     expect(() => readProjectManifest(dir)).toThrow(CliError);
   });
 
   it("rejects a project that is not AWS SAM", () => {
     fs.writeFileSync(
-      `${dir}/sless.json`,
+      `${dir}/slskit.json`,
       JSON.stringify(sampleManifest({ framework: { id: "serverless" } }))
     );
     expect(() => readProjectManifest(dir)).toThrow(/supports AWS SAM projects only/);
   });
 
   it("reads a valid manifest", () => {
-    fs.writeFileSync(`${dir}/sless.json`, JSON.stringify(sampleManifest()));
+    fs.writeFileSync(`${dir}/slskit.json`, JSON.stringify(sampleManifest()));
     const manifest = readProjectManifest(dir);
     expect(manifest.name).toBe("demo-app");
   });
@@ -79,10 +79,20 @@ describe("toInitAnswers", () => {
       runtime: "typescript",
       database: "dynamodb",
       apiGateway: true,
+      sharedApi: false,
       layer: true,
       memorySize: 512,
       force: false,
     });
+  });
+
+  // Templates are regenerated from these answers, so losing the layout here would
+  // silently rewrite a shared-API project into per-service stacks.
+  it("recovers a shared API Gateway layout", () => {
+    const manifest = sampleManifest();
+    manifest.apiGateway = { enabled: true, perService: false };
+
+    expect(toInitAnswers(manifest).sharedApi).toBe(true);
   });
 });
 

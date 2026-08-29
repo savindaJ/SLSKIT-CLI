@@ -2,7 +2,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { CliError } from "./errors.js";
 
-export const MANIFEST_FILE = "sless.json";
+export const MANIFEST_FILE = "slskit.json";
+
+// The manifest was called sless.json before the CLI was renamed. Projects generated
+// then are still read, and migrated to the new name the next time one is written.
+export const LEGACY_MANIFEST_FILE = "sless.json";
+
+// The manifest this project actually has on disk, new name preferred.
+export function manifestPathFor(cwd: string): string | undefined {
+  for (const name of [MANIFEST_FILE, LEGACY_MANIFEST_FILE]) {
+    const candidate = path.join(cwd, name);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
 
 // Every project has this environment from "slskit init" onward, and every
 // stage-aware command falls back to it when no --env is given.
@@ -53,9 +68,9 @@ export interface ProjectManifest {
 }
 
 export function readManifest(cwd: string, command = "slskit"): ProjectManifest {
-  const manifestPath = path.join(cwd, MANIFEST_FILE);
+  const manifestPath = manifestPathFor(cwd);
 
-  if (!fs.existsSync(manifestPath)) {
+  if (!manifestPath) {
     throw new CliError(
       `No ${MANIFEST_FILE} found in ${cwd}. Run "slskit init" first, or run "${command}" from your project root.`
     );
@@ -81,6 +96,13 @@ export function writeManifest(cwd: string, manifest: ProjectManifest): void {
     path.join(cwd, MANIFEST_FILE),
     `${JSON.stringify(manifest, null, 2)}\n`
   );
+
+  // Writing completes the rename: leaving both files behind would make it ambiguous
+  // which one a command had actually read.
+  const legacy = path.join(cwd, LEGACY_MANIFEST_FILE);
+  if (fs.existsSync(legacy)) {
+    fs.rmSync(legacy);
+  }
 }
 
 export function parseEnvironmentName(

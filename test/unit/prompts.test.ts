@@ -6,6 +6,7 @@ const FULL_OPTIONS = {
   runtime: "typescript",
   database: "none",
   apiGateway: "yes",
+  sharedApi: "yes",
   layer: "no",
   memory: "256",
 };
@@ -44,6 +45,16 @@ describe("collectAnswers", () => {
       const answers = await collectAnswers({ ...FULL_OPTIONS, database: alias });
       expect(answers.database).toBe(expected);
     }
+  });
+
+  it("only shares an API when there is an API at all", async () => {
+    const off = await collectAnswers({ ...FULL_OPTIONS, apiGateway: "no" });
+    expect(off.apiGateway).toBe(false);
+    expect(off.sharedApi).toBe(false);
+
+    const perService = await collectAnswers({ ...FULL_OPTIONS, sharedApi: "no" });
+    expect(perService.apiGateway).toBe(true);
+    expect(perService.sharedApi).toBe(false);
   });
 
   it("parses api-gateway and layer yes/no variants", async () => {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { APP_ENVIRONMENT_KEY } from "../../core/environments.js";
 
 // Secret values live beside the project in .env.<environment>, which the generated
-// .gitignore excludes. Nothing in this file is ever written into sless.json.
+// .gitignore excludes. Nothing in this file is ever written into slskit.json.
 export function dotenvFileName(environment: string): string {
   return `.env.${environment}`;
 }
@@ -117,6 +117,6 @@ export function ensureDotenvIgnored(cwd: string): boolean {
   }
 
   const separator = existing.endsWith("\n") || existing === "" ? "" : "\n";
-  fs.writeFileSync(file, `${existing}${separator}.env.*\n!.env.example\n`);
+  fs.writeFileSync(file, `${existing}${separator}.env\n.env.*\n`);
   return true;
 }

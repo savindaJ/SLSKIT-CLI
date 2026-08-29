@@ -10,28 +10,55 @@ import {
 import type { ProjectManifest } from "../../core/environments.js";
 import { getCallerIdentity, isAwsCliAvailable } from "../configure/aws-cli.js";
 import { parameterOverrides, toCliArguments } from "../env/parameters.js";
+import { syncTemplates } from "../env/templates.js";
 import { ensureSamCliInstalled, samBuild } from "../run/sam-cli.js";
-import { samDeploy, stackOutputs } from "./sam-deploy.js";
+import { samDeploy, samSyncCode, stackExists, stackOutputs } from "./sam-deploy.js";
+import {
+  allScope,
+  applicationsOf,
+  functionScope,
+  promptForScope,
+  serviceScope,
+} from "./scope.js";
+import type { DeployScope } from "./scope.js";
 import type { DeployOptions } from "./types.js";
 
-interface ApplicationView {
-  name: string;
-  functions?: { name: string }[];
-}
-
-function applicationsOf(manifest: ProjectManifest): ApplicationView[] {
-  return (manifest.applications as ApplicationView[] | undefined) ?? [];
-}
-
+// The physical Lambda names the deploy will touch, so the plan names real AWS
+// resources rather than template logical ids.
 function plannedFunctionNames(
   manifest: ProjectManifest,
-  environment: string
+  environment: string,
+  scope: DeployScope
 ): string[] {
-  return applicationsOf(manifest).flatMap((app) =>
-    (app.functions ?? []).map((fn) =>
-      functionNameFor(manifest.name, environment, fn.name)
-    )
-  );
+  return applicationsOf(manifest)
+    .filter((app) => scope.kind === "all" || app.name === scope.service)
+    .flatMap((app) => app.functions ?? [])
+    .filter((fn) => scope.kind !== "function" || fn.name === scope.functionName)
+    .map((fn) => functionNameFor(manifest.name, environment, fn.name));
+}
+
+async function resolveScope(
+  manifest: ProjectManifest,
+  options: DeployOptions
+): Promise<DeployScope> {
+  if (options.service && options.function) {
+    throw new CliError('Pass either "--service" or "--function", not both.');
+  }
+
+  if (options.service) {
+    return serviceScope(manifest, options.service);
+  }
+
+  if (options.function) {
+    return functionScope(manifest, options.function);
+  }
+
+  // Without a TTY there is nobody to ask, and --yes already means "no questions".
+  if (options.all || options.yes || !process.stdin.isTTY) {
+    return allScope;
+  }
+
+  return promptForScope(manifest);
 }
 
 async function confirmDeploy(
@@ -39,9 +66,10 @@ async function confirmDeploy(
   environment: string,
   stackName: string,
   region: string,
-  functionNames: string[]
+  functionNames: string[],
+  scope: DeployScope
 ): Promise<boolean> {
-  logger.info(`\nAbout to deploy "${manifest.name}" to AWS.`);
+  logger.info(`\nAbout to deploy ${scope.label} of "${manifest.name}" to AWS.`);
   logger.info(`  ${APP_ENVIRONMENT_KEY}: ${environment}`);
   logger.info(`  stack:       ${stackName}`);
   logger.info(`  region:      ${region}`);
@@ -49,8 +77,11 @@ async function confirmDeploy(
   for (const name of functionNames) {
     logger.info(`    ${name}`);
   }
+
   logger.info(
-    "\nThis creates real AWS resources in your account and they cost money."
+    scope.kind === "all"
+      ? "\nThis creates real AWS resources in your account and they cost money."
+      : "\nThis updates the code of those functions in the stack that is already deployed."
   );
 
   const { confirm } = await import("@inquirer/prompts");
@@ -75,9 +106,15 @@ export async function deployAction(options: DeployOptions): Promise<void> {
     profile: config.profile,
   };
 
+  // A variable can appear just by being typed into a .env file, so the templates are
+  // brought back in step before anything is uploaded.
+  const rewritten = syncTemplates(cwd, manifest);
+  if (rewritten.length > 0) {
+    logger.info(`Updated ${rewritten.length} template(s) for the current variables.`);
+  }
+
   // Resolved before anything runs so a missing secret fails here, not mid-deploy.
   const overrides = toCliArguments(parameterOverrides(cwd, manifest, environment));
-  const functionNames = plannedFunctionNames(manifest, environment);
 
   // Checked before anything slower: without --yes a non-interactive deploy can
   // never proceed, so that is the most useful thing to say first.
@@ -86,6 +123,9 @@ export async function deployAction(options: DeployOptions): Promise<void> {
       `Deploying creates real AWS resources. Re-run with --yes to deploy "${environment}" non-interactively.`
     );
   }
+
+  const scope = await resolveScope(manifest, options);
+  const functionNames = plannedFunctionNames(manifest, environment, scope);
 
   if (!options.skipVerify) {
     if (!isAwsCliAvailable()) {
@@ -108,13 +148,22 @@ export async function deployAction(options: DeployOptions): Promise<void> {
     logger.info(`  account: ${identity.account}`);
   }
 
+  // A code sync updates functions inside an existing stack; it cannot create one,
+  // and the error sam gives for a missing stack does not say so.
+  if (scope.kind !== "all" && !options.skipVerify && !stackExists(target)) {
+    throw new CliError(
+      `Stack "${target.stackName}" does not exist yet, so there is nothing to update.\nDeploy the whole project first: slskit deploy ${environment} --all`
+    );
+  }
+
   if (!options.yes) {
     const proceed = await confirmDeploy(
       manifest,
       environment,
       target.stackName,
       target.region,
-      functionNames
+      functionNames,
+      scope
     );
 
     if (!proceed) {
@@ -125,13 +174,18 @@ export async function deployAction(options: DeployOptions): Promise<void> {
 
   await ensureSamCliInstalled();
 
-  if (options.build !== false) {
-    samBuild(cwd);
+  // sam sync builds what it needs itself, so a separate build would only be repeated work.
+  if (scope.kind === "all") {
+    if (options.build !== false) {
+      samBuild(cwd);
+    }
+
+    samDeploy(cwd, target, overrides, Boolean(options.guided));
+  } else {
+    samSyncCode(cwd, target, scope.resourceIds, overrides);
   }
 
-  samDeploy(cwd, target, overrides, Boolean(options.guided));
-
-  logger.info(`\nDeployed "${manifest.name}" to "${environment}".`);
+  logger.info(`\nDeployed ${scope.label} of "${manifest.name}" to "${environment}".`);
   logger.info(`  stack:   ${target.stackName}`);
   logger.info(`  region:  ${target.region}`);
 

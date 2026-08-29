@@ -41,7 +41,7 @@ const infoText = (): string => cliLogs.infos.join("\n");
 const errorText = (): string => cliLogs.errors.join("\n");
 
 function manifestOf(root: string): Record<string, any> {
-  return JSON.parse(fs.readFileSync(path.join(root, "sless.json"), "utf8"));
+  return JSON.parse(fs.readFileSync(path.join(root, "slskit.json"), "utf8"));
 }
 
 function read(root: string, file: string): string {
@@ -154,7 +154,7 @@ describe("slskit env command", () => {
     removeDir(dir);
   });
 
-  it("stores a plain value in sless.json and adds a template parameter", async () => {
+  it("stores a plain value in slskit.json and adds a template parameter", async () => {
     const { dir, root } = await scaffold("slskit-env-set-");
     const result = await runProgram(["env", "set", "LOG_LEVEL=debug"], { cwd: root });
 
@@ -162,14 +162,14 @@ describe("slskit env command", () => {
     expect(manifestOf(root).environments.list.dev.variables).toEqual({
       LOG_LEVEL: { value: "debug" },
     });
-    expect(read(root, "src/functions/auth/template.yaml")).toMatch(/EnvLogLevel:/);
-    expect(read(root, "src/functions/auth/template.yaml")).toMatch(
+    expect(read(root, "templates/auth.yaml")).toMatch(/EnvLogLevel:/);
+    expect(read(root, "templates/auth.yaml")).toMatch(
       /LOG_LEVEL: !Ref EnvLogLevel/
     );
     removeDir(dir);
   });
 
-  it("keeps a secret out of sless.json", async () => {
+  it("keeps a secret out of slskit.json", async () => {
     const { dir, root } = await scaffold("slskit-env-secret-");
     const result = await runProgram(
       ["env", "set", "API_KEY=sk-live-abc", "--secret"],
@@ -177,7 +177,7 @@ describe("slskit env command", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(read(root, "sless.json")).not.toMatch(/sk-live-abc/);
+    expect(read(root, "slskit.json")).not.toMatch(/sk-live-abc/);
     expect(read(root, ".env.dev")).toMatch(/API_KEY=sk-live-abc/);
     expect(manifestOf(root).environments.list.dev.variables).toEqual({
       API_KEY: { secret: true },

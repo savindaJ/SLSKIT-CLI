@@ -1,5 +1,6 @@
 jest.mock("node:child_process", () => ({
   spawnSync: jest.fn(),
+  spawn: jest.fn(),
 }));
 
 jest.mock("../../src/core/logger", () => ({
@@ -10,19 +11,26 @@ jest.mock("@inquirer/prompts", () => ({
   confirm: jest.fn(),
 }));
 
-import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
 import { confirm } from "@inquirer/prompts";
 import {
   ensureSamCliInstalled,
   samBuild,
-  samLocalStartApi,
+  samBuildResource,
+  samRebuild,
+  startLocalApi,
 } from "../../src/commands/run/sam-cli";
 
 const mockSpawnSync = spawnSync as unknown as jest.Mock;
+const mockSpawn = spawn as unknown as jest.Mock;
 const mockConfirm = confirm as unknown as jest.Mock;
 
 beforeEach(() => {
   mockSpawnSync.mockReset();
+  mockSpawn.mockReset();
   mockConfirm.mockReset();
 });
 
@@ -148,16 +156,95 @@ describe("samBuild", () => {
   });
 });
 
-describe("samLocalStartApi", () => {
-  it("does not throw when stopped by a signal (Ctrl+C)", () => {
-    mockSpawnSync.mockReturnValue({ error: null, status: null, signal: "SIGINT" });
-    expect(() => samLocalStartApi("/tmp/project", 3000)).not.toThrow();
+describe("startLocalApi", () => {
+  it("spawns sam with the port and the parameter overrides", () => {
+    mockSpawn.mockReturnValue({ on: jest.fn() });
+    startLocalApi("/tmp/project", 4000, ["AppEnvironment=dev"]);
+
+    const [command, args] = mockSpawn.mock.calls[0] as [string, string[]];
+    expect(command).toBe("sam");
+    expect(args.join(" ")).toMatch(/local start-api --port 4000/);
+    expect(args.join(" ")).toMatch(/--parameter-overrides AppEnvironment=dev/);
+  });
+});
+
+function project(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "slskit-partial-"));
+  fs.mkdirSync(path.join(dir, ".aws-sam/build/AuthStack/LoginFunction"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(dir, ".aws-sam/build/ProductStack/GetProductsFunction"), {
+    recursive: true,
+  });
+  fs.writeFileSync(dir + "/.aws-sam/build/AuthStack/LoginFunction/handler.js", "old");
+  fs.writeFileSync(
+    dir + "/.aws-sam/build/ProductStack/GetProductsFunction/handler.js",
+    "keep"
+  );
+  return dir;
+}
+
+const read = (file: string): string => fs.readFileSync(file, "utf8");
+
+// "sam build <ResourceId>" empties the build directory and restores only the named
+// resource, so building straight into it would leave every other function unservable
+// until the next full build. The scoped build has to go somewhere else and be moved in.
+describe("samBuildResource", () => {
+  it("swaps in the rebuilt function and leaves its siblings untouched", () => {
+    const dir = project();
+
+    mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      const buildDir = args[args.indexOf("--build-dir") + 1];
+      const out = path.join(dir, buildDir, "AuthStack/LoginFunction");
+      fs.mkdirSync(out, { recursive: true });
+      fs.writeFileSync(path.join(out, "handler.js"), "new");
+      return { error: null, status: 0 };
+    });
+
+    expect(samBuildResource(dir, "AuthStack/LoginFunction")).toBe(true);
+    expect(read(dir + "/.aws-sam/build/AuthStack/LoginFunction/handler.js")).toBe("new");
+    expect(read(dir + "/.aws-sam/build/ProductStack/GetProductsFunction/handler.js")).toBe(
+      "keep"
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("throws when the process exits with a non-zero code", () => {
-    mockSpawnSync.mockReturnValue({ error: null, status: 1, signal: null });
-    expect(() => samLocalStartApi("/tmp/project", 3000)).toThrow(
-      /sam local start-api exited with code 1/
-    );
+  it("builds into a scratch directory and does not leave it behind", () => {
+    const dir = project();
+
+    mockSpawnSync.mockImplementation((_cmd: string, args: string[]) => {
+      const buildDir = args[args.indexOf("--build-dir") + 1];
+      expect(buildDir).not.toBe(path.join(".aws-sam", "build"));
+      fs.mkdirSync(path.join(dir, buildDir, "AuthStack/LoginFunction"), {
+        recursive: true,
+      });
+      return { error: null, status: 0 };
+    });
+
+    samBuildResource(dir, "AuthStack/LoginFunction");
+
+    expect(fs.readdirSync(path.join(dir, ".aws-sam"))).toEqual(["build"]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps the previous build when sam fails, and reports it", () => {
+    const dir = project();
+    mockSpawnSync.mockReturnValue({ error: null, status: 1 });
+
+    expect(samBuildResource(dir, "AuthStack/LoginFunction")).toBe(false);
+    expect(read(dir + "/.aws-sam/build/AuthStack/LoginFunction/handler.js")).toBe("old");
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("samRebuild", () => {
+  it("reports failure instead of throwing, so a watch session survives it", () => {
+    mockSpawnSync.mockReturnValue({ error: null, status: 1 });
+    expect(samRebuild("/tmp/project")).toBe(false);
+  });
+
+  it("reports success", () => {
+    mockSpawnSync.mockReturnValue({ error: null, status: 0 });
+    expect(samRebuild("/tmp/project")).toBe(true);
   });
 });
