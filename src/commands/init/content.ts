@@ -30,7 +30,7 @@ import {
 } from "./templates/shared-code.js";
 import { nodeHandler, nodeService } from "./templates/node.js";
 import { pythonHandler, pythonService } from "./templates/python.js";
-import { samFlatTemplate, samRootTemplate, samServiceTemplate } from "./templates/sam.js";
+import { samRootTemplate, samServiceTemplate } from "./templates/sam.js";
 
 function handlerSource(
   answers: InitAnswers,
@@ -95,9 +95,7 @@ export function buildFileMap(
     }
   }
 
-  files["template.yaml"] = answers.sharedApi
-    ? samFlatTemplate(answers, LAMBDA_APPS, keys)
-    : samRootTemplate(answers, LAMBDA_APPS, keys);
+  files["template.yaml"] = samRootTemplate(answers, LAMBDA_APPS, keys);
 
   const sharedDir = sharedCodeDir(answers);
   const isNodeLayer = answers.layer && answers.runtime !== "python";
@@ -131,9 +129,7 @@ export function buildFileMap(
       files[`${SRC_DIR}/services/${app.name}/__init__.py`] = "";
     }
 
-    if (!answers.sharedApi) {
-      files[serviceTemplatePath(app.name)] = samServiceTemplate(answers, app, keys);
-    }
+    files[serviceTemplatePath(app.name)] = samServiceTemplate(answers, app, keys);
 
     for (const fn of app.functions) {
       if (answers.runtime === "python") {

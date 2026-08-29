@@ -11,6 +11,7 @@ export function gitignore(runtime: InitAnswers["runtime"]): string {
     "node_modules/",
     "dist/",
     ".aws-sam/",
+    ".slskit-local.yaml",
     ".env",
     ".env.*",
     ".DS_Store",

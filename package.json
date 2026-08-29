@@ -2,7 +2,30 @@
   "name": "slskit",
   "version": "0.1.0",
   "description": "Scaffold and incrementally grow multi-service AWS Lambda projects",
+  "keywords": [
+    "aws",
+    "lambda",
+    "serverless",
+    "aws-sam",
+    "sam",
+    "cli",
+    "scaffold",
+    "generator",
+    "typescript",
+    "api-gateway",
+    "cloudformation",
+    "iac"
+  ],
+  "homepage": "https://github.com/savindaJ/Sless-Cli#readme",
+  "bugs": {
+    "url": "https://github.com/savindaJ/Sless-Cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/savindaJ/Sless-Cli.git"
+  },
   "license": "MIT",
+  "author": "Savinda Jayasekara",
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +34,8 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "COMMAND.md"
   ],
   "engines": {
     "node": ">=18"
@@ -20,10 +44,11 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "dev": "tsx src/cli.ts",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run clean && npm run build",
     "start": "node bin/slskit.js",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.5.2",

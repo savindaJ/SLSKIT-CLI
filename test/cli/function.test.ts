@@ -153,6 +153,35 @@ describe("slskit function command", () => {
     expect(fs.existsSync(`${projectDir}/src/functions/billing`)).toBe(false);
   });
 
+  // Adding a function rebuilds slskit.json. It used to rebuild the environments too,
+  // wiping every deploy target except dev -- their region, profile and variables.
+  it("leaves the project's environments untouched", async () => {
+    await runProgram(
+      ["env", "add", "production", "--profile", "prod-admin", "--region", "eu-west-2",
+       "--skip-verify"],
+      { cwd: projectDir }
+    );
+    await runProgram(["env", "set", "LOG_LEVEL=debug", "--env", "production"], {
+      cwd: projectDir,
+    });
+
+    const read = () =>
+      JSON.parse(fs.readFileSync(`${projectDir}/slskit.json`, "utf8")) as {
+        environments: { list: Record<string, unknown> };
+      };
+    const before = read().environments;
+
+    const added = await runProgram(
+      ["function", "report", "--new-app", "billing", "--method", "GET",
+       "--memory", "128", "--runtime", "typescript"],
+      { cwd: projectDir }
+    );
+
+    expect(added.status).toBe(0);
+    expect(read().environments).toEqual(before);
+    expect(Object.keys(read().environments.list)).toContain("production");
+  });
+
   it("rejects a function name that already exists in the target app", async () => {
     const result = await runProgram(
       ["function", "login", "--app", "auth", "--method", "POST", "--memory", "256", "--runtime", "typescript"],

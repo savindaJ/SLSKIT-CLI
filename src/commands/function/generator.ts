@@ -7,17 +7,14 @@ import {
 } from "../init/types.js";
 import type { InitAnswers, RuntimeId, ServiceDef, ServiceFunction } from "../init/types.js";
 import { buildProjectManifest } from "../init/manifest.js";
+import type { PreservedState } from "../init/manifest.js";
 import { nodeHandler, nodeService, standaloneNodeService } from "../init/templates/node.js";
 import {
   pythonHandler,
   pythonService,
   standalonePythonService,
 } from "../init/templates/python.js";
-import {
-  samFlatTemplate,
-  samRootTemplate,
-  samServiceTemplate,
-} from "../init/templates/sam.js";
+import { samRootTemplate, samServiceTemplate } from "../init/templates/sam.js";
 
 export interface GeneratedFunction {
   files: Record<string, string>;
@@ -61,7 +58,8 @@ export function generateFunction(
   isNewApp: boolean,
   fn: ServiceFunction,
   existingGeneratedFiles: string[],
-  envKeys: string[] = []
+  envKeys: string[] = [],
+  preserved: PreservedState = {}
 ): GeneratedFunction {
   const fnRuntime = fn.runtime ?? answers.runtime;
   const sameFamily = sameRuntimeFamily(fnRuntime, answers.runtime);
@@ -94,23 +92,13 @@ export function generateFunction(
     ? [...apps, targetApp]
     : apps.map((app) => (app.name === appName ? targetApp : app));
 
-  // With one shared API Gateway every function lives in the single root template,
-  // so there is no per-service template to update -- and the root always changes.
-  const appTemplatePath = answers.sharedApi
-    ? "template.yaml"
-    : serviceTemplatePath(appName);
+  const appTemplatePath = serviceTemplatePath(appName);
+  files[appTemplatePath] = samServiceTemplate(answers, targetApp, envKeys);
 
   let rootTemplatePath: string | undefined;
-
-  if (answers.sharedApi) {
-    files[appTemplatePath] = samFlatTemplate(answers, updatedApps, envKeys);
-  } else {
-    files[appTemplatePath] = samServiceTemplate(answers, targetApp, envKeys);
-
-    if (isNewApp) {
-      rootTemplatePath = "template.yaml";
-      files[rootTemplatePath] = samRootTemplate(answers, updatedApps, envKeys);
-    }
+  if (isNewApp) {
+    rootTemplatePath = "template.yaml";
+    files[rootTemplatePath] = samRootTemplate(answers, updatedApps, envKeys);
   }
 
   const generatedFiles = Array.from(
@@ -118,7 +106,7 @@ export function generateFunction(
   ).sort();
 
   files["slskit.json"] = `${JSON.stringify(
-    buildProjectManifest(answers, updatedApps, generatedFiles),
+    buildProjectManifest(answers, updatedApps, generatedFiles, preserved),
     null,
     2
   )}\n`;

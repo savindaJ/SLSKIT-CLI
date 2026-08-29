@@ -51,8 +51,8 @@ function appEnvironmentParameter(): string {
     Description: Deployment environment; every stage-scoped resource name is built from it`;
 }
 
-function samParameters(envKeys: string[]): string {
-  const params: string[] = [appEnvironmentParameter()];
+function samParameters(envKeys: string[], extra: string[] = []): string {
+  const params: string[] = [appEnvironmentParameter(), ...extra];
 
   // Every stage variable defaults to empty, so a stage that does not set one can
   // still deploy from the same template without supplying an override. NoEcho is
@@ -87,13 +87,13 @@ function samHttpApiResource(): string {
 `;
 }
 
-function samSharedLayerResource(answers: InitAnswers): string {
+// Like CodeUri, this is relative to the template that declares it, not to the API mode.
+function samSharedLayerResource(answers: InitAnswers, site: TemplateSite): string {
   const runtime = lambdaRuntime(answers.runtime);
   const buildMethod = answers.runtime === "python" ? "python3.12" : "nodejs20.x";
   const layerDir = answers.runtime === "python" ? "shared/python" : "shared/nodejs";
-  const contentUri = answers.sharedApi
-    ? `${SRC_DIR}/${layerDir}`
-    : `../${SRC_DIR}/${layerDir}`;
+  const contentUri =
+    site === "root" ? `${SRC_DIR}/${layerDir}` : `../${SRC_DIR}/${layerDir}`;
 
   return `  SharedLayer:
     Type: AWS::Serverless::LayerVersion
@@ -155,17 +155,89 @@ function samFunctionName(answers: InitAnswers, fn: ServiceFunction): string {
   return `      FunctionName: !Sub "${answers.name}-\${${APP_ENVIRONMENT_PARAM}}-${fn.name}"\n`;
 }
 
-// A service template lives in templates/, one level below the project root; the
-// flat template is the project root itself.
-function codeUriFor(answers: InitAnswers): string {
-  return answers.sharedApi ? "./" : "../";
+// A service template lives in templates/, one level below the project root; the flat
+// local template is written at the project root itself.
+type TemplateSite = "service" | "root";
+
+function codeUriFor(site: TemplateSite): string {
+  return site === "root" ? "./" : "../";
+}
+
+// With one shared API Gateway the API lives in the root stack, which SAM's HttpApi
+// event cannot reach ("ApiId must be a valid reference to an AWS::Serverless::HttpApi
+// resource in same template"). Plain API Gateway v2 resources have no such rule, so
+// the routes are declared directly against the id the root passes down.
+const SHARED_API_PARAM = "HttpApiId";
+
+function samRawRoute(fn: ServiceFunction): string {
+  const name = pascal(fn.name);
+
+  return `
+  ${name}Integration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ${SHARED_API_PARAM}
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ${name}Function.Arn
+      PayloadFormatVersion: "2.0"
+
+  ${name}Route:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ${SHARED_API_PARAM}
+      RouteKey: "${fn.method} ${fn.httpPath}"
+      Target: !Sub "integrations/\${${name}Integration}"
+
+  ${name}Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ${name}Function
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:\${AWS::Partition}:execute-api:\${AWS::Region}:\${AWS::AccountId}:\${${SHARED_API_PARAM}}/*/*"
+`;
+}
+
+function sharedApiParameter(): string {
+  return `  ${SHARED_API_PARAM}:
+    Type: String
+    Description: The project's shared HTTP API; this service attaches its routes to it`;
+}
+
+// The one API every service hangs its routes off. Declared with plain API Gateway v2
+// resources rather than AWS::Serverless::HttpApi so that nested stacks can reference it.
+function samSharedApiResources(answers: InitAnswers): string {
+  return `  SharedHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${answers.name}-\${${APP_ENVIRONMENT_PARAM}}"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - "*"
+        AllowOrigins:
+          - "*"
+
+  SharedHttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref SharedHttpApi
+      StageName: $default
+      AutoDeploy: true
+
+`;
 }
 
 function samFunction(
   answers: InitAnswers,
   service: ServiceDef,
   fn: ServiceFunction,
-  envKeys: string[]
+  envKeys: string[],
+  site: TemplateSite
 ): string {
   const fnRuntime = fn.runtime ?? answers.runtime;
   // A function in a different runtime family than the project can't attach the
@@ -181,7 +253,12 @@ function samFunction(
   const policies = samPolicies(database, service);
   const runtime = lambdaRuntime(fnRuntime);
   const layers = useLayer ? `      Layers:\n        - !Ref SharedLayer\n` : "";
-  const events = answers.apiGateway ? samHttpEvent(fn) : "";
+  // Routes are SAM events when the API is in this template, and separate API Gateway
+  // resources when it lives in the root stack.
+  const events =
+    answers.apiGateway && !(answers.sharedApi && site === "service")
+      ? samHttpEvent(fn)
+      : "";
 
   // CodeUri is the project root: SAM stages it and runs npm install / pip install there,
   // so package.json and requirements.txt must be inside it.
@@ -189,7 +266,7 @@ function samFunction(
     return `  ${resource}:
     Type: AWS::Serverless::Function
     Properties:
-${functionName}      CodeUri: ${codeUriFor(answers)}
+${functionName}      CodeUri: ${codeUriFor(site)}
       Handler: ${SRC_DIR}.functions.${service.name}.${fn.name}.handler.handler
       Runtime: ${runtime}
       MemorySize: ${memorySize}
@@ -208,7 +285,7 @@ ${env}${policies}${layers}${events}`;
   return `  ${resource}:
     Type: AWS::Serverless::Function
     Properties:
-${functionName}      CodeUri: ${codeUriFor(answers)}
+${functionName}      CodeUri: ${codeUriFor(site)}
       Handler: ${handlerPath}
       Runtime: ${runtime}
       MemorySize: ${memorySize}
@@ -224,56 +301,69 @@ ${env}${policies}${layers}${events}    Metadata:
 ${externals}`;
 }
 
-// Each service stack is self-contained: it owns its HTTP API, layer and tables, so that
-// SAM can resolve every reference locally (a cross-stack ApiId breaks sam build).
+// One stack per service, nested by the root. With per-service APIs the stack owns its
+// own HTTP API; with a shared one it takes the API's id from the root and attaches
+// routes to it.
 export function samServiceTemplate(
   answers: InitAnswers,
   service: ServiceDef,
   envKeys: string[] = []
 ): string {
-  const httpApi = answers.apiGateway ? samHttpApiResource() : "";
-  const sharedLayer = answers.layer ? samSharedLayerResource(answers) : "";
+  const shared = answers.apiGateway && answers.sharedApi;
+
+  const httpApi = answers.apiGateway && !shared ? samHttpApiResource() : "";
+  const sharedLayer = answers.layer ? samSharedLayerResource(answers, "service") : "";
   const functions = service.functions
-    .map((fn) => samFunction(answers, service, fn, envKeys))
+    .map((fn) => samFunction(answers, service, fn, envKeys, "service"))
     .join("\n");
+  const routes = shared
+    ? service.functions.map((fn) => samRawRoute(fn)).join("")
+    : "";
   const dynamo = answers.database === "dynamodb" ? samDynamoResources(service) : "";
 
-  const outputs = answers.apiGateway
-    ? `
+  // Only a service that owns its API has a URL of its own to report upward.
+  const outputs =
+    answers.apiGateway && !shared
+      ? `
 Outputs:
   HttpApiUrl:
     Description: HTTP API URL for the ${service.name} service
     Value: !Sub https://\${HttpApi}.execute-api.\${AWS::Region}.amazonaws.com
 `
-    : "";
+      : "";
+
+  const parameters = shared
+    ? samParameters(envKeys, [sharedApiParameter()])
+    : samParameters(envKeys);
 
   return `AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: ${service.name} service
 
-${samParameters(envKeys)}Globals:
+${parameters}Globals:
   Function:
     Timeout: 10
     MemorySize: ${answers.memorySize}
 
 Resources:
-${httpApi}${sharedLayer}${functions}${dynamo}${outputs}`;
+${httpApi}${sharedLayer}${functions}${routes}${dynamo}${outputs}`;
 }
 
-// One template for the whole project: a single HTTP API, one layer, and every
-// function beside them. SAM rejects an ApiId that points outside the template that
-// declares the API, so sharing one API Gateway means everything lives together.
+// Everything in one file: a single HTTP API, one layer, every function beside them.
+// This is what "slskit run" serves, never what gets deployed. SAM local cannot resolve
+// an API that lives in a parent stack, so a shared-API project is flattened for local
+// use -- generated from the same manifest as the real templates, so it cannot drift.
 export function samFlatTemplate(
   answers: InitAnswers,
   apps: ServiceDef[],
   envKeys: string[] = []
 ): string {
   const httpApi = answers.apiGateway ? samHttpApiResource() : "";
-  const sharedLayer = answers.layer ? samSharedLayerResource(answers) : "";
+  const sharedLayer = answers.layer ? samSharedLayerResource(answers, "root") : "";
 
   const functions = apps
     .flatMap((service) =>
-      service.functions.map((fn) => samFunction(answers, service, fn, envKeys))
+      service.functions.map((fn) => samFunction(answers, service, fn, envKeys, "root"))
     )
     .join("\n");
 
@@ -309,13 +399,20 @@ export function samRootTemplate(
   apps: ServiceDef[],
   envKeys: string[] = []
 ): string {
+  const shared = answers.apiGateway && answers.sharedApi;
+
   const parameterNames = [APP_ENVIRONMENT_PARAM, ...stageParameterNames(envKeys)];
+  const passed = parameterNames.map((name) => `        ${name}: !Ref ${name}`);
+
+  // The API is created here, so its id is handed to every service that attaches to it.
+  if (shared) {
+    passed.push(`        ${SHARED_API_PARAM}: !Ref SharedHttpApi`);
+  }
+
   const parametersBlock =
-    parameterNames.length > 0
-      ? `      Parameters:\n${parameterNames
-          .map((name) => `        ${name}: !Ref ${name}`)
-          .join("\n")}\n`
-      : "";
+    passed.length > 0 ? `      Parameters:\n${passed.join("\n")}\n` : "";
+
+  const sharedApi = shared ? samSharedApiResources(answers) : "";
 
   const services = apps
     .map((service) => {
@@ -328,8 +425,17 @@ ${parametersBlock}`;
     })
     .join("\n");
 
-  const outputs = answers.apiGateway
-    ? `
+  // One shared API has one URL; per-service APIs each report their own.
+  const outputs = !answers.apiGateway
+    ? ""
+    : shared
+      ? `
+Outputs:
+  ApiUrl:
+    Description: HTTP API URL for every service in this project
+    Value: !Sub https://\${SharedHttpApi}.execute-api.\${AWS::Region}.amazonaws.com
+`
+      : `
 Outputs:
 ${apps
   .map(
@@ -338,13 +444,12 @@ ${apps
     Value: !GetAtt ${pascal(service.name)}Stack.Outputs.HttpApiUrl`
   )
   .join("\n")}
-`
-    : "";
+`;
 
   return `AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: ${answers.name} root stack
 
 ${samParameters(envKeys)}Resources:
-${services}${outputs}`;
+${sharedApi}${services}${outputs}`;
 }

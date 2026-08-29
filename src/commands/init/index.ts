@@ -13,7 +13,7 @@ export function registerInitCommand(program: Command): void {
     .option("--api-gateway <yes|no>", "Expose the functions over HTTP")
     .option(
       "--shared-api <yes|no>",
-      "One API Gateway for every function (no = one per service)"
+      "One API Gateway for every function (default: no — one per service)"
     )
     .option("--layer <yes|no>", "Use shared/ as a common Lambda layer")
     .option(

@@ -24,10 +24,19 @@ function handlerValue(runtime: RuntimeId, appName: string, fnName: string): stri
   return `${SRC_DIR}/functions/${appName}/${fnName}/handler.handler`;
 }
 
+// Everything a project accumulates after "slskit init" that is not derived from the
+// answers. Rebuilding the manifest without it silently wipes the user's deploy
+// targets -- their regions, profiles and variables -- on every "slskit function".
+export interface PreservedState {
+  version?: string;
+  environments?: unknown;
+}
+
 export function buildProjectManifest(
   answers: InitAnswers,
   apps: ServiceDef[],
-  generatedFiles: string[]
+  generatedFiles: string[],
+  preserved: PreservedState = {}
 ): Record<string, unknown> {
   const sharedDir = sharedCodeDir(answers);
 
@@ -108,7 +117,7 @@ export function buildProjectManifest(
 
   return {
     name: answers.name,
-    version: "0.1.0",
+    version: preserved.version ?? "0.1.0",
     generatedBy: "slskit",
     runtime: {
       id: answers.runtime,
@@ -160,7 +169,7 @@ export function buildProjectManifest(
           attachedTo: layerAttachedTo,
         }
       : { enabled: false, path: `${SRC_DIR}/shared` },
-    environments: {
+    environments: preserved.environments ?? {
       default: DEFAULT_ENVIRONMENT,
       list: {
         [DEFAULT_ENVIRONMENT]: {

@@ -13,13 +13,7 @@ import { parameterOverrides, toCliArguments } from "../env/parameters.js";
 import { syncTemplates } from "../env/templates.js";
 import { ensureSamCliInstalled, samBuild } from "../run/sam-cli.js";
 import { samDeploy, samSyncCode, stackExists, stackOutputs } from "./sam-deploy.js";
-import {
-  allScope,
-  applicationsOf,
-  functionScope,
-  promptForScope,
-  serviceScope,
-} from "./scope.js";
+import { applicationsOf, resolveDeployScope, resourceIdsFor } from "./scope.js";
 import type { DeployScope } from "./scope.js";
 import type { DeployOptions } from "./types.js";
 
@@ -35,30 +29,6 @@ function plannedFunctionNames(
     .flatMap((app) => app.functions ?? [])
     .filter((fn) => scope.kind !== "function" || fn.name === scope.functionName)
     .map((fn) => functionNameFor(manifest.name, environment, fn.name));
-}
-
-async function resolveScope(
-  manifest: ProjectManifest,
-  options: DeployOptions
-): Promise<DeployScope> {
-  if (options.service && options.function) {
-    throw new CliError('Pass either "--service" or "--function", not both.');
-  }
-
-  if (options.service) {
-    return serviceScope(manifest, options.service);
-  }
-
-  if (options.function) {
-    return functionScope(manifest, options.function);
-  }
-
-  // Without a TTY there is nobody to ask, and --yes already means "no questions".
-  if (options.all || options.yes || !process.stdin.isTTY) {
-    return allScope;
-  }
-
-  return promptForScope(manifest);
 }
 
 async function confirmDeploy(
@@ -124,7 +94,7 @@ export async function deployAction(options: DeployOptions): Promise<void> {
     );
   }
 
-  const scope = await resolveScope(manifest, options);
+  const scope = await resolveDeployScope(manifest, options);
   const functionNames = plannedFunctionNames(manifest, environment, scope);
 
   if (!options.skipVerify) {
@@ -182,7 +152,7 @@ export async function deployAction(options: DeployOptions): Promise<void> {
 
     samDeploy(cwd, target, overrides, Boolean(options.guided));
   } else {
-    samSyncCode(cwd, target, scope.resourceIds, overrides);
+    samSyncCode(cwd, target, resourceIdsFor(manifest, scope), overrides);
   }
 
   logger.info(`\nDeployed ${scope.label} of "${manifest.name}" to "${environment}".`);

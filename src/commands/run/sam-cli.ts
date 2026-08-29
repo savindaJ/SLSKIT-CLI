@@ -119,9 +119,28 @@ export async function ensureSamCliInstalled(): Promise<void> {
   logger.info("\nAWS SAM CLI installed.\n");
 }
 
-export function samBuild(cwd: string): void {
-  logger.info("\n> sam build");
-  const result = spawnSync("sam", ["build"], {
+// Which template to build and where to put the result. Empty means sam's defaults:
+// template.yaml into .aws-sam/build.
+export interface BuildTarget {
+  template?: string;
+  buildDir?: string;
+}
+
+function targetArgs(target: BuildTarget): string[] {
+  const args: string[] = [];
+  if (target.template) {
+    args.push("-t", target.template);
+  }
+  if (target.buildDir) {
+    args.push("--build-dir", target.buildDir);
+  }
+  return args;
+}
+
+export function samBuild(cwd: string, target: BuildTarget = {}): void {
+  const args = ["build", ...targetArgs(target)];
+  logger.info(`\n> sam ${args.join(" ")}`);
+  const result = spawnSync("sam", args, {
     cwd,
     stdio: "inherit",
     shell: USE_SHELL,
@@ -142,15 +161,24 @@ const PARTIAL_BUILD_DIR = path.join(".aws-sam", "slskit-partial");
 // resource it was asked for, which would leave every other function unservable. So
 // the scoped build goes to a scratch directory and just that one artifact is moved
 // into place -- the running local API picks it up on the next request.
-export function samBuildResource(cwd: string, resourceId: string): boolean {
+export function samBuildResource(
+  cwd: string,
+  resourceId: string,
+  target: BuildTarget = {}
+): boolean {
   const scratch = path.join(cwd, PARTIAL_BUILD_DIR);
   fs.rmSync(scratch, { recursive: true, force: true });
 
-  const result = spawnSync(
-    "sam",
-    ["build", resourceId, "--build-dir", PARTIAL_BUILD_DIR],
-    { cwd, stdio: "inherit", shell: USE_SHELL }
-  );
+  const args = ["build", resourceId, "--build-dir", PARTIAL_BUILD_DIR];
+  if (target.template) {
+    args.push("-t", target.template);
+  }
+
+  const result = spawnSync("sam", args, {
+    cwd,
+    stdio: "inherit",
+    shell: USE_SHELL,
+  });
 
   if (result.error || result.status !== 0) {
     fs.rmSync(scratch, { recursive: true, force: true });
@@ -158,16 +186,20 @@ export function samBuildResource(cwd: string, resourceId: string): boolean {
   }
 
   const built = path.join(scratch, resourceId);
-  const target = path.join(cwd, ".aws-sam", "build", resourceId);
+  const destination = path.join(
+    cwd,
+    target.buildDir ?? path.join(".aws-sam", "build"),
+    resourceId
+  );
 
   if (!fs.existsSync(built)) {
     fs.rmSync(scratch, { recursive: true, force: true });
     return false;
   }
 
-  fs.rmSync(target, { recursive: true, force: true });
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.renameSync(built, target);
+  fs.rmSync(destination, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.renameSync(built, destination);
   fs.rmSync(scratch, { recursive: true, force: true });
 
   return true;
@@ -175,8 +207,8 @@ export function samBuildResource(cwd: string, resourceId: string): boolean {
 
 // Unlike samBuild this never throws: a syntax error in a handler must not tear down
 // a watch session that the next save would fix.
-export function samRebuild(cwd: string): boolean {
-  const result = spawnSync("sam", ["build"], {
+export function samRebuild(cwd: string, target: BuildTarget = {}): boolean {
+  const result = spawnSync("sam", ["build", ...targetArgs(target)], {
     cwd,
     stdio: "inherit",
     shell: USE_SHELL,
@@ -188,7 +220,8 @@ export function samRebuild(cwd: string): boolean {
 export function startLocalApi(
   cwd: string,
   port: number,
-  parameterOverrides: string[] = []
+  parameterOverrides: string[] = [],
+  template?: string
 ): ChildProcess {
   const overrideArgs =
     parameterOverrides.length > 0
@@ -201,11 +234,13 @@ export function startLocalApi(
       ? ` --parameter-overrides (${parameterOverrides.length} value${parameterOverrides.length === 1 ? "" : "s"})`
       : "";
 
+  const templateArgs = template ? ["-t", template] : [];
+
   logger.info(`\n> sam local start-api --port ${port}${overrideNote}`);
 
   const child = spawn(
     "sam",
-    ["local", "start-api", "--port", String(port), ...overrideArgs],
+    ["local", "start-api", "--port", String(port), ...templateArgs, ...overrideArgs],
     { cwd, stdio: "inherit", shell: USE_SHELL }
   );
 

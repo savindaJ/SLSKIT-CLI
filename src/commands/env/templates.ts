@@ -3,11 +3,7 @@ import path from "node:path";
 import type { ProjectManifest } from "../../core/environments.js";
 import { envParameterName } from "../init/templates/helpers.js";
 import { serviceTemplatePath } from "../init/types.js";
-import {
-  samFlatTemplate,
-  samRootTemplate,
-  samServiceTemplate,
-} from "../init/templates/sam.js";
+import { samRootTemplate, samServiceTemplate } from "../init/templates/sam.js";
 import { toInitAnswers, toServiceDefs } from "../function/manifest.js";
 import type { ProjectManifest as FunctionManifest } from "../function/types.js";
 import { projectEnvKeys } from "./keys.js";
@@ -30,22 +26,18 @@ export function regenerateTemplates(
 
   const written: string[] = [];
 
-  if (!answers.sharedApi) {
-    for (const app of apps) {
-      const relative = serviceTemplatePath(app.name);
-      fs.writeFileSync(
-        path.join(cwd, relative),
-        samServiceTemplate(answers, app, envKeys)
-      );
-      written.push(relative);
-    }
+  for (const app of apps) {
+    const relative = serviceTemplatePath(app.name);
+    const full = path.join(cwd, relative);
+    // Absent in a project generated before services had their own templates.
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, samServiceTemplate(answers, app, envKeys));
+    written.push(relative);
   }
 
   fs.writeFileSync(
     path.join(cwd, "template.yaml"),
-    answers.sharedApi
-      ? samFlatTemplate(answers, apps, envKeys)
-      : samRootTemplate(answers, apps, envKeys)
+    samRootTemplate(answers, apps, envKeys)
   );
   written.push("template.yaml");
 

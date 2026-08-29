@@ -14,6 +14,9 @@ export function registerRunCommand(program: Command): void {
       "Environment to run with (example: dev, staging) — defaults to the default environment"
     )
     .option("-p, --port <port>", "Local API Gateway port", "3000")
+    .option("-s, --service <name>", "Run every function in one service")
+    .option("--function <name>", "Run one function on its own")
+    .option("--all", "Run everything without being asked what to run", false)
     .option("--no-build", 'Skip "sam build" before starting the local API')
     .option(
       "--no-watch",

@@ -203,4 +203,70 @@ describe("slskit run command", () => {
     expect(cliLogs.errors.join("\n")).toMatch(/marked secret .* but is missing/);
     removeDir(dir);
   });
+
+  it("runs only one service's functions with --service", async () => {
+    const dir = createTempDir("slskit-run-svc-");
+    const root = await scaffoldProject(
+      { ...minimalAnswers, name: "shop", apiGateway: true, sharedApi: false },
+      dir
+    );
+
+    const result = await runProgram(["run", "--service", "auth", "--no-build"], {
+      cwd: root,
+    });
+
+    expect(result.status).toBe(0);
+    // Served from a template narrowed to that service, so sam builds only those.
+    const local = fs.readFileSync(path.join(root, ".slskit-local.yaml"), "utf8");
+    expect(local).toMatch(/LoginFunction:/);
+    expect(local).not.toMatch(/GetProductsFunction:/);
+    expect(callArgs().join("\n")).toMatch(/-t \.aws-sam\/local\/template\.yaml/);
+    removeDir(dir);
+  });
+
+  it("runs a single function with --function", async () => {
+    const dir = createTempDir("slskit-run-fn-");
+    const root = await scaffoldProject(
+      { ...minimalAnswers, name: "shop", apiGateway: true, sharedApi: false },
+      dir
+    );
+
+    await runProgram(["run", "--function", "getProducts", "--no-build"], { cwd: root });
+
+    const local = fs.readFileSync(path.join(root, ".slskit-local.yaml"), "utf8");
+    expect(local).toMatch(/GetProductsFunction:/);
+    expect(local).not.toMatch(/LoginFunction:/);
+    removeDir(dir);
+  });
+
+  it("rejects an unknown service or function before starting sam", async () => {
+    const dir = createTempDir("slskit-run-badscope-");
+    const root = await scaffoldProject(
+      { ...minimalAnswers, name: "shop", apiGateway: true, sharedApi: false },
+      dir
+    );
+    mockSpawnSync.mockClear();
+
+    const result = await runProgram(["run", "--service", "billing"], { cwd: root });
+
+    expect(result.status).not.toBe(0);
+    expect(cliLogs.errors.join("\n")).toMatch(/Service "billing" was not found/);
+    expect(callArgs().join("\n")).not.toMatch(/start-api/);
+    removeDir(dir);
+  });
+
+  // Without a TTY there is nobody to ask, so existing scripted runs are unchanged.
+  it("runs everything from the real templates when no scope is given", async () => {
+    const dir = createTempDir("slskit-run-default-");
+    const root = await scaffoldProject(
+      { ...minimalAnswers, name: "shop", apiGateway: true, sharedApi: false },
+      dir
+    );
+
+    await runProgram(["run", "--no-build"], { cwd: root });
+
+    expect(fs.existsSync(path.join(root, ".slskit-local.yaml"))).toBe(false);
+    expect(callArgs().join("\n")).not.toMatch(/-t /);
+    removeDir(dir);
+  });
 });

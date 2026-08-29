@@ -18,6 +18,15 @@ import {
   startLocalApi,
 } from "./sam-cli.js";
 import { describeChange, watchProject } from "./watch.js";
+import {
+  LOCAL_BUILD_DIR,
+  localBuiltTemplate,
+  needsLocalTemplate,
+  writeLocalTemplate,
+} from "./local-template.js";
+import type { BuildTarget } from "./sam-cli.js";
+import { allScope, promptForScope, scopeFromFlags } from "../../core/scope.js";
+import type { Scope } from "../../core/scope.js";
 import type { ApplicationView } from "./resources.js";
 import type { RunOptions } from "./types.js";
 
@@ -40,11 +49,20 @@ function applicationsOf(manifest: ProjectManifest): ApplicationView[] {
   return (manifest.applications as ApplicationView[] | undefined) ?? [];
 }
 
-// One shared API Gateway means a single flat template, so a function is addressed
-// without its application's stack prefix.
-function sharesOneApi(manifest: ProjectManifest): boolean {
-  const api = manifest.apiGateway as { perService?: boolean } | undefined;
-  return api?.perService === false;
+async function resolveRunScope(
+  manifest: ProjectManifest,
+  options: RunOptions
+): Promise<Scope> {
+  const fromFlags = scopeFromFlags(manifest, options);
+  if (fromFlags) {
+    return fromFlags;
+  }
+
+  if (!process.stdin.isTTY) {
+    return allScope;
+  }
+
+  return promptForScope(manifest, "run", "Everything — every service");
 }
 
 function syncAndResolve(cwd: string, environment: string): string[] {
@@ -76,13 +94,27 @@ export async function runAction(options: RunOptions): Promise<void> {
   // Resolved before sam runs so a missing secret fails fast rather than after a build.
   let overrides = syncAndResolve(cwd, environment);
 
+  const scope = await resolveRunScope(project, options);
+
+  // Two reasons to serve a flattened copy rather than the real templates: a shared API
+  // Gateway lives in the root stack, which sam local cannot resolve from a nested one;
+  // and running part of the project means serving a template with only those functions
+  // in it, so sam builds only those.
+  const flattened = needsLocalTemplate(project) || scope.kind !== "all";
+  const buildTarget: BuildTarget = flattened
+    ? { template: writeLocalTemplate(cwd, project, scope), buildDir: LOCAL_BUILD_DIR }
+    : {};
+  const servedTemplate = flattened ? localBuiltTemplate() : undefined;
+
   await ensureSamCliInstalled();
 
   if (options.build !== false) {
-    samBuild(cwd);
+    samBuild(cwd, buildTarget);
   }
 
-  logger.info(`\nRunning "${manifest.name}" locally on a single API Gateway port.`);
+  logger.info(
+    `\nRunning ${scope.label} of "${manifest.name}" locally on a single API Gateway port.`
+  );
   logger.info(`  ${APP_ENVIRONMENT_KEY}=${environment}`);
   logger.info(
     `Every application's routes are served from one local API at http://127.0.0.1:${port}`
@@ -94,7 +126,7 @@ export async function runAction(options: RunOptions): Promise<void> {
   }
   logger.info("Press Ctrl+C to stop.\n");
 
-  let child = startLocalApi(cwd, port, overrides);
+  let child = startLocalApi(cwd, port, overrides, servedTemplate);
   let stopping = false;
   let restarting = false;
 
@@ -104,7 +136,7 @@ export async function runAction(options: RunOptions): Promise<void> {
     logger.info(`\n> ${describeChange(labels)} changed — rebuilding`);
 
     for (const resourceId of resourceIds) {
-      if (!samBuildResource(cwd, resourceId)) {
+      if (!samBuildResource(cwd, resourceId, buildTarget)) {
         logger.error(`Build failed for ${resourceId}. Fix it and save again.`);
         return;
       }
@@ -116,7 +148,7 @@ export async function runAction(options: RunOptions): Promise<void> {
   const rebuildAll = (labels: string[]): void => {
     logger.info(`\n> ${describeChange(labels)} changed — rebuilding everything`);
 
-    if (!samRebuild(cwd)) {
+    if (!samRebuild(cwd, buildTarget)) {
       logger.error("Build failed. Fix it and save again.");
       return;
     }
@@ -132,12 +164,15 @@ export async function runAction(options: RunOptions): Promise<void> {
     let next: string[];
     try {
       next = syncAndResolve(cwd, environment);
+      if (flattened) {
+        writeLocalTemplate(cwd, readProjectManifest(cwd, "slskit run"), scope);
+      }
     } catch (error) {
       logger.error(error instanceof Error ? error.message : String(error));
       return;
     }
 
-    if (!samRebuild(cwd)) {
+    if (!samRebuild(cwd, buildTarget)) {
       logger.error("Build failed. Fix it and save again.");
       return;
     }
@@ -150,13 +185,15 @@ export async function runAction(options: RunOptions): Promise<void> {
   const watcher = watching
     ? watchProject(
         cwd,
-        applicationsOf(project),
+        applicationsOf(project).filter(
+          (app) => scope.kind === "all" || app.name === scope.service
+        ),
         {
           onFunctions: rebuildFunctions,
           onFull: rebuildAll,
           onRestart: restart,
         },
-        sharesOneApi(project)
+        flattened
       )
     : undefined;
 
@@ -182,7 +219,7 @@ export async function runAction(options: RunOptions): Promise<void> {
 
       if (restarting) {
         restarting = false;
-        child = startLocalApi(cwd, port, overrides);
+        child = startLocalApi(cwd, port, overrides, servedTemplate);
         continue;
       }
 

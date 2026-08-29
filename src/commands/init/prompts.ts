@@ -113,13 +113,12 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
     !runtime ||
     !database ||
     apiGateway === undefined ||
-    (apiGateway !== false && sharedApi === undefined) ||
     layer === undefined ||
     memorySize === undefined;
 
   if (needsPrompt && !process.stdin.isTTY) {
     throw new CliError(
-      "Non-interactive init needs --name, --runtime, --database, --api-gateway, --shared-api, --layer, and --memory."
+      "Non-interactive init needs --name, --runtime, --database, --api-gateway, --layer, and --memory."
     );
   }
 
@@ -157,10 +156,12 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
     });
 
     if (apiGateway) {
+      // Defaults to no: a root stack nesting one template per service is the layout
+      // that keeps working as a project grows past CloudFormation's 500-resource cap.
       sharedApi ??= await confirm({
         message:
-          "One shared API Gateway for every function? (no = one API per service)",
-        default: true,
+          "One shared API Gateway for every function? (no = a template per service)",
+        default: false,
       });
     }
 
@@ -188,7 +189,7 @@ export async function collectAnswers(options: InitOptions): Promise<InitAnswers>
     runtime: runtime as RuntimeId,
     database: database as DatabaseId,
     apiGateway: Boolean(apiGateway),
-    sharedApi: Boolean(apiGateway) && sharedApi !== false,
+    sharedApi: Boolean(apiGateway) && sharedApi === true,
     layer: Boolean(layer),
     memorySize: memorySize as MemorySize,
     force: Boolean(options.force),

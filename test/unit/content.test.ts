@@ -356,23 +356,29 @@ describe("buildFileMap", () => {
 describe("buildFileMap with one shared API Gateway", () => {
   const files = () => buildFileMap(sharedApiAnswers);
 
-  it("emits a single template and no per-service ones", () => {
+  it("still gives every service its own template", () => {
     const generated = files();
 
     expect(generated["template.yaml"]).toBeDefined();
     for (const app of LAMBDA_APPS) {
-      expect(generated[`src/functions/${app.name}/template.yaml`]).toBeUndefined();
+      expect(generated[`templates/${app.name}.yaml`]).toBeDefined();
     }
   });
 
-  it("declares exactly one HTTP API that every function attaches to", () => {
-    const root = files()["template.yaml"];
-    const apis = root.match(/Type: AWS::Serverless::HttpApi/g) ?? [];
-    const attachments = root.match(/ApiId: !Ref HttpApi$/gm) ?? [];
-    const functions = LAMBDA_APPS.flatMap((app) => app.functions);
+  // SAM refuses an HttpApi event whose ApiId points at another template, so the
+  // routes are plain API Gateway v2 resources against the id the root passes down.
+  it("declares one API in the root and attaches routes from each service", () => {
+    const generated = files();
+    const root = generated["template.yaml"];
 
-    expect(apis).toHaveLength(1);
-    expect(attachments).toHaveLength(functions.length);
+    expect(root.match(/Type: AWS::ApiGatewayV2::Api/g) ?? []).toHaveLength(1);
+    expect(root).toMatch(/HttpApiId: !Ref SharedHttpApi/);
+
+    const auth = generated["templates/auth.yaml"];
+    expect(auth).not.toMatch(/Type: AWS::Serverless::HttpApi/);
+    expect(auth).toMatch(/Type: AWS::ApiGatewayV2::Route/);
+    expect(auth).toMatch(/RouteKey: "POST \/auth\/login"/);
+    expect(auth).toMatch(/^ {2}HttpApiId:$/m);
   });
 
   it("outputs one URL rather than one per service", () => {
@@ -382,21 +388,19 @@ describe("buildFileMap with one shared API Gateway", () => {
     expect(root).not.toMatch(/AuthApiUrl:/);
   });
 
-  // The flat template is the project root, not three levels down inside a service.
-  it("points CodeUri and the layer at the project root", () => {
-    const root = files()["template.yaml"];
+  // A service template sits in templates/, one level below the project root.
+  it("points CodeUri and the layer one level up from a service template", () => {
+    const auth = files()["templates/auth.yaml"];
 
-    expect(root).toMatch(/CodeUri: \.\//);
-    expect(root).not.toMatch(/CodeUri: \.\.\//);
-    expect(root).toMatch(/ContentUri: src\/shared\/nodejs/);
+    expect(auth).toMatch(/CodeUri: \.\.\//);
+    expect(auth).toMatch(/ContentUri: \.\.\/src\/shared\/nodejs/);
   });
 
   it("records the layout so later commands regenerate the same shape", () => {
     const manifest = JSON.parse(files()["slskit.json"]) as {
-      apiGateway: { perService: boolean; templates: string[] };
+      apiGateway: { perService: boolean };
     };
 
     expect(manifest.apiGateway.perService).toBe(false);
-    expect(manifest.apiGateway.templates).toEqual(["template.yaml"]);
   });
 });

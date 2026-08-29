@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in slskit does not behave the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please **redact any AWS keys, connection strings or
+        `.env` contents** before pasting output.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The exact commands, starting from `slskit init` if you can.
+      placeholder: |
+        slskit init probe --runtime typescript --database none --api-gateway yes --layer yes --memory 128
+        cd probe
+        slskit run
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The complete output, including any stack trace.
+      render: shell
+
+  - type: input
+    id: slskit-version
+    attributes:
+      label: slskit version
+      placeholder: "slskit --version"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Node, SAM CLI and OS
+      placeholder: "node -v / sam --version / macOS 15"
+    validations:
+      required: true
+
+  - type: textarea
+    id: project
+    attributes:
+      label: Generated project details
+      description: >
+        If it involves a generated project, the relevant part of `template.yaml`,
+        `templates/<service>.yaml` or `slskit.json` usually settles it.
+      render: yaml

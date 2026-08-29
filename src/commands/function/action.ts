@@ -53,7 +53,8 @@ export async function functionAction(options: FunctionOptions): Promise<void> {
     picked.isNewApp,
     fn,
     manifest.structure.files,
-    projectEnvKeys(root, manifest)
+    projectEnvKeys(root, manifest),
+    { version: manifest.version, environments: manifest.environments }
   );
 
   for (const [relativePath, contents] of Object.entries(files)) {

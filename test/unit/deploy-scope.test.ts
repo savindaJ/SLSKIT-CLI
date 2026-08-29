@@ -1,9 +1,5 @@
-import {
-  allScope,
-  functionScope,
-  serviceScope,
-  sharesOneApi,
-} from "../../src/commands/deploy/scope";
+import { resourceIdsFor } from "../../src/commands/deploy/scope";
+import { allScope, functionScope, serviceScope } from "../../src/core/scope";
 import type { ProjectManifest } from "../../src/core/environments";
 
 function manifest(perService = true): ProjectManifest {
@@ -18,30 +14,24 @@ function manifest(perService = true): ProjectManifest {
   } as unknown as ProjectManifest;
 }
 
-describe("sharesOneApi", () => {
-  it("is true only when the project has one flat template", () => {
-    expect(sharesOneApi(manifest(true))).toBe(false);
-    expect(sharesOneApi(manifest(false))).toBe(true);
-  });
-});
-
 describe("serviceScope", () => {
   it("collects every function in the service", () => {
     const scope = serviceScope(manifest(), "auth");
 
     expect(scope.kind).toBe("service");
-    expect(scope.resourceIds).toEqual([
+    expect(resourceIdsFor(manifest(), scope)).toEqual([
       "AuthStack/LoginFunction",
       "AuthStack/RegisterFunction",
     ]);
     expect(scope.label).toMatch(/2 functions/);
   });
 
-  // With one shared API Gateway there is no nested stack to qualify the id with.
-  it("drops the stack prefix in a shared-API project", () => {
-    expect(serviceScope(manifest(false), "auth").resourceIds).toEqual([
-      "LoginFunction",
-      "RegisterFunction",
+  // Deploys always go through the nested service stacks, whichever API mode the
+  // project uses, so the id is always qualified by its stack.
+  it("keeps the stack prefix in a shared-API project too", () => {
+    expect(resourceIdsFor(manifest(false), serviceScope(manifest(false), "auth"))).toEqual([
+      "AuthStack/LoginFunction",
+      "AuthStack/RegisterFunction",
     ]);
   });
 
@@ -50,7 +40,7 @@ describe("serviceScope", () => {
   });
 
   it("refuses a service with nothing in it", () => {
-    expect(() => serviceScope(manifest(), "empty")).toThrow(/no functions to deploy/);
+    expect(() => serviceScope(manifest(), "empty")).toThrow(/has no functions/);
   });
 });
 
@@ -59,11 +49,10 @@ describe("functionScope", () => {
   it("finds the function's service on its own", () => {
     const scope = functionScope(manifest(), "getProducts");
 
-    expect(scope).toMatchObject({
-      kind: "function",
-      service: "product",
-      resourceIds: ["ProductStack/GetProductsFunction"],
-    });
+    expect(scope).toMatchObject({ kind: "function", service: "product" });
+    expect(resourceIdsFor(manifest(), scope)).toEqual([
+      "ProductStack/GetProductsFunction",
+    ]);
   });
 
   it("lists the known functions when one is misspelled", () => {
@@ -75,6 +64,7 @@ describe("functionScope", () => {
 
 describe("allScope", () => {
   it("targets no individual resources", () => {
-    expect(allScope).toMatchObject({ kind: "all", resourceIds: [] });
+    expect(allScope.kind).toBe("all");
+    expect(resourceIdsFor(manifest(), allScope)).toEqual([]);
   });
 });

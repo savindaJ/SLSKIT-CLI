@@ -35,4 +35,6 @@ export interface ProjectManifest {
   applications: ManifestApplication[];
   structure: { files: string[] };
   environments?: EnvironmentsConfig;
+  // Carried forward untouched whenever the manifest is rebuilt.
+  version?: string;
 }
