@@ -5,7 +5,7 @@
 Please report security issues privately rather than opening a public issue.
 
 Use GitHub's [private vulnerability reporting][advisory] on this repository, or email
-**beecodelabs.savinda@gmail.com**.
+**nt.savinda@gmail.com**.
 
 [advisory]: https://github.com/savindaJ/Sless-Cli/security/advisories/new
 
