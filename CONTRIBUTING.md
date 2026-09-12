@@ -6,8 +6,8 @@ all welcome.
 ## Getting set up
 
 ```bash
-git clone https://github.com/savindaJ/Sless-Cli.git
-cd Sless-Cli
+git clone https://github.com/savindaJ/SLSKIT-CLI.git
+cd SLSKIT-CLI
 npm install
 npm test
 ```
@@ -25,8 +25,13 @@ slskit --help
 | Script | What it does |
 | --- | --- |
 | `npm test` | the Jest suite |
+| `npm run test:unit` | unit tests only |
+| `npm run test:cli` | commander-level CLI tests only |
 | `npm run test:watch` | the suite in watch mode |
-| `npm run lint` | `tsc --noEmit` — type check only |
+| `npm run typecheck` | `tsc --noEmit` — type check only |
+| `npm run docs` | regenerate `docs/flags.md` from Commander |
+| `npm run docs:check` | fail if generated docs are stale |
+| `npm run licenses` | check the MIT project license and production deps |
 | `npm run build` | compile `src/` to `dist/` |
 | `npm run dev` | run the CLI from source via tsx |
 
@@ -62,11 +67,19 @@ request adding a third needs a good reason.
 ## Pull requests
 
 1. Branch off `develop`.
-2. Make sure `npm run lint`, `npm test` and `npm run build` all pass.
-3. Describe what changed and how you verified it — including anything you ran against
+2. Make sure `npm run typecheck`, `npm test`, `npm run docs`, `npm run licenses`
+   and `npm run build` all pass.
+3. If you added or changed a flag, run `npm run docs` so `docs/flags.md` stays in
+   sync. Do not hand-edit that file.
+4. Use a conventional PR title (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
+   `test:`, `ci:`, `security:`).
+5. Describe what changed and how you verified it — including anything you ran against
    real SAM.
 
 Small, focused pull requests get reviewed faster than large ones.
+
+By contributing you agree that your work is licensed under the same
+[MIT license](LICENSE) as the rest of the project.
 
 ## Reporting bugs
 

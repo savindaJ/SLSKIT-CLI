@@ -13,8 +13,10 @@ Tests are necessary but often not sufficient here: much of this tool's behaviour
 only shows up when SAM actually runs. Say what you ran.
 -->
 
-- [ ] `npm run lint`
+- [ ] `npm run typecheck`
 - [ ] `npm test`
+- [ ] `npm run docs` (if you changed flags or commands)
+- [ ] `npm run licenses`
 - [ ] `npm run build`
 - [ ] Tried against a real generated project (`slskit init` → `slskit run` / `sam build`)
 

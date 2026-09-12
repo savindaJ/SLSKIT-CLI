@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import { runCommand } from "../../core/run.js";
-import { functionAction } from "./action.js";
 import type { FunctionOptions } from "./types.js";
 
 export function registerFunctionCommand(program: Command): void {
@@ -17,15 +16,16 @@ export function registerFunctionCommand(program: Command): void {
     )
     .option("-r, --runtime <runtime>", "typescript | javascript | python")
     .action((name: string | undefined, options: FunctionOptions) =>
-      runCommand(() =>
-        functionAction({
+      runCommand(async () => {
+        const { functionAction } = await import("./action.js");
+        await functionAction({
           name: name ?? options.name,
           app: options.app,
           newApp: options.newApp,
           method: options.method,
           memory: options.memory,
           runtime: options.runtime,
-        })
-      )
+        });
+      })
     );
 }

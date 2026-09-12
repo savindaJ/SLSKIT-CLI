@@ -11,12 +11,18 @@ to the AWS SAM CLI and the AWS CLI for everything that touches AWS.
 | [`slskit init`](#slskit-init-name) | Scaffold a new project |
 | [`slskit run`](#slskit-run-environment) | Run it locally on one API Gateway port |
 | [`slskit function`](#slskit-function-name) | Add a function to a new or existing service |
+| [`slskit rm`](#slskit-rm-name) | Remove a function or a service |
 | [`slskit configure`](#slskit-configure) | Set AWS credentials and the deploy target |
 | [`slskit env`](#slskit-env) | Manage environments and their variables |
 | [`slskit deploy`](#slskit-deploy-environment) | Deploy to AWS |
 
 Conventions used below: `<required>`, `[optional]`. Every command that reads a
-project must be run from the project root — the directory holding `slskit.json`.
+project must be run from the project root — the directory holding `slskit.json` —
+or passed `--cwd` to that directory.
+
+Every command also accepts `--debug` (stack traces), `--silent` (no info logs)
+and `--json` (suppress human output). The generated flag list is in
+[docs/flags.md](docs/flags.md); this file is the narrative reference.
 
 ---
 
@@ -252,6 +258,89 @@ import its database client, so it is generated standalone — a plain success re
 no shared imports. If the project lacks the tooling that function needs (the first
 TypeScript function in a JavaScript project, say), `package.json` / `tsconfig.json`
 are updated and `npm install` runs.
+
+---
+
+## `slskit rm [name]`
+
+Removes a function, or a whole service and every function in it. The inverse of
+`slskit function`: it deletes the code, prunes `slskit.json`, and regenerates every
+template that referenced what went. Aliased as `slskit remove`.
+
+```bash
+slskit rm                            # asks what to remove, then which one
+slskit rm login                      # resolved by name
+slskit rm --function login
+slskit rm --service auth             # the service and all of its functions
+slskit rm --app auth                 # same thing
+slskit rm login --yes                # skip the confirmation
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `name` | A function or service name. Looked up in the project; `--function`/`--service` settle it if one name is both. |
+
+| Flag | Meaning |
+| --- | --- |
+| `--function <name>` | Remove this function |
+| `--service <name>` | Remove this service and every function in it |
+| `--app <name>` | Same as `--service` |
+| `-y, --yes` | Skip the confirmation prompt — required in a non-interactive shell |
+
+### What it deletes
+
+| Removing | Gone |
+| --- | --- |
+| a function | `src/functions/<service>/<function>/`, `src/services/<service>/<function>.<ext>` |
+| a service | `src/functions/<service>/`, `src/services/<service>/`, `templates/<service>.yaml` |
+
+And in every case: the function's entry in `slskit.json`, its route, its layer
+attachment, its directory listing — plus the service's nesting in `template.yaml` and
+its entry in `framework.files.applications`, `apiGateway.templates` and
+`layer.templates` when a whole service goes.
+
+The manifest is rebuilt from the pruned service list rather than edited in place, so
+nothing derived from it can be left behind. Environments, their variables and the
+project version are carried through untouched.
+
+### It asks before it deletes
+
+With no flags and a TTY it asks what kind of thing to remove, then which one:
+
+```text
+? What do you want to remove?
+❯ A function
+  An application — and every function in it
+? Function: auth/login  POST /auth/login
+```
+
+Then it prints exactly what will go and waits for a yes. `--yes` skips that, and is
+required without a TTY — where the command prints the same plan and stops rather than
+deleting anything.
+
+### Removing the last function removes its service
+
+A service template with no functions is not valid CloudFormation, so a function that
+is the last one in its service takes the service with it. The command says so before
+asking.
+
+For the same reason it refuses to empty the project:
+
+```text
+"login" is the only function in this project, and a stack with no resources cannot be
+deployed. Add another function first, or start over with "slskit init".
+```
+
+### It does not touch AWS
+
+`slskit rm` only changes your project. Resources already deployed stay until the next
+full deploy removes them from the stack:
+
+```bash
+slskit deploy production --all
+```
+
+A scoped deploy cannot do it — removing a resource is an infrastructure change.
 
 ---
 

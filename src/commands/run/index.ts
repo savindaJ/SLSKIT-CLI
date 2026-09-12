@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import { runCommand } from "../../core/run.js";
-import { runAction } from "./action.js";
 import type { RunOptions } from "./types.js";
 
 export function registerRunCommand(program: Command): void {
@@ -27,6 +26,9 @@ export function registerRunCommand(program: Command): void {
       "Environment whose variables to run with (default: the default environment)"
     )
     .action((environment: string | undefined, options: RunOptions) =>
-      runCommand(() => runAction({ ...options, env: environment ?? options.env }))
+      runCommand(async () => {
+        const { runAction } = await import("./action.js");
+        await runAction({ ...options, env: environment ?? options.env });
+      })
     );
 }

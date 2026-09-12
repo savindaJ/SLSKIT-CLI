@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import { runCommand } from "../../core/run.js";
-import { initAction } from "./action.js";
 import type { InitOptions } from "./types.js";
 
 export function registerInitCommand(program: Command): void {
@@ -22,8 +21,9 @@ export function registerInitCommand(program: Command): void {
     )
     .option("-f, --force", "Overwrite files if the folder already exists", false)
     .action((name: string | undefined, options: InitOptions) =>
-      runCommand(() =>
-        initAction({
+      runCommand(async () => {
+        const { initAction } = await import("./action.js");
+        await initAction({
           name: name ?? options.name,
           runtime: options.runtime,
           database: options.database,
@@ -32,7 +32,7 @@ export function registerInitCommand(program: Command): void {
           layer: options.layer,
           memory: options.memory,
           force: options.force,
-        })
-      )
+        });
+      })
     );
 }

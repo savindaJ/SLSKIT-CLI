@@ -1,6 +1,6 @@
 # slskit
 
-[![CI](https://github.com/savindaJ/Sless-Cli/actions/workflows/ci.yml/badge.svg)](https://github.com/savindaJ/Sless-Cli/actions/workflows/ci.yml)
+[![CI](https://github.com/savindaJ/SLSKIT-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/savindaJ/SLSKIT-CLI/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/slskit.svg)](https://www.npmjs.com/package/slskit)
 [![node](https://img.shields.io/node/v/slskit.svg)](https://www.npmjs.com/package/slskit)
 [![license](https://img.shields.io/npm/l/slskit.svg)](LICENSE)
@@ -21,6 +21,14 @@ npm install -g slskit
 slskit init my-lambda-app
 cd my-lambda-app
 slskit run
+```
+
+In CI, install it locally and pin the version with a lockfile. A global install
+always pulls the latest release, including breaking changes.
+
+```bash
+npm install --save-dev slskit
+npx slskit deploy --yes
 ```
 
 That's a running API on `http://127.0.0.1:3000` with two services, four functions, a
@@ -93,6 +101,7 @@ CLI. Secrets are never echoed, and override values are never logged.
 | `slskit init [name]` | Scaffold a new project |
 | `slskit run [environment]` | Run it locally on one API Gateway port |
 | `slskit function [name]` | Add a function to a new or existing service |
+| `slskit rm [name]` | Remove a function or a service, and everything that referenced it |
 | `slskit configure` | Set AWS credentials and the deploy target |
 | `slskit env` | Manage environments and their variables |
 | `slskit deploy [environment]` | Deploy to AWS |
@@ -132,8 +141,8 @@ Endpoints:
 ## Development
 
 ```bash
-git clone https://github.com/savindaJ/Sless-Cli.git
-cd Sless-Cli
+git clone https://github.com/savindaJ/SLSKIT-CLI.git
+cd SLSKIT-CLI
 npm install
 npm test
 ```
@@ -141,7 +150,9 @@ npm test
 ```bash
 npm run build && npm link   # use your working copy as the real slskit command
 npm run dev                 # run from source via tsx
-npm run lint                # tsc --noEmit
+npm run typecheck           # tsc --noEmit
+npm run docs                # regenerate docs/flags.md from Commander
+npm run licenses            # check the project and production dependency licenses
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Bug reports and
@@ -154,4 +165,4 @@ documents exactly how slskit handles your credentials.
 
 ## License
 
-[MIT](LICENSE) © Savinda Jayasekara
+[MIT](LICENSE) © Savinda Jayasekara. Third-party notices are in [NOTICE.md](NOTICE.md).

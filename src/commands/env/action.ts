@@ -1,4 +1,5 @@
 import { CliError } from "../../core/errors.js";
+import { isInteractive } from "../../core/is-ci.js";
 import { logger } from "../../core/logger.js";
 import {
   APP_ENVIRONMENT_KEY,
@@ -154,7 +155,7 @@ export async function envRemoveAction(
   const remaining = environmentNames(manifest).filter((each) => each !== environment);
 
   if (!options.yes) {
-    if (!process.stdin.isTTY) {
+    if (!isInteractive()) {
       throw new CliError(
         `Removing an environment cannot be undone. Re-run with --yes to remove "${environment}".`
       );

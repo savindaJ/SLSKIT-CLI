@@ -5,12 +5,15 @@ import { manifestPathFor } from "../../core/environments.js";
 import type { HttpMethod, InitAnswers, RuntimeId, ServiceDef } from "../init/types.js";
 import type { ProjectManifest } from "./types.js";
 
-export function readProjectManifest(cwd: string): ProjectManifest {
+export function readProjectManifest(
+  cwd: string,
+  command = "slskit function"
+): ProjectManifest {
   const manifestPath = manifestPathFor(cwd);
 
   if (!manifestPath) {
     throw new CliError(
-      `No slskit.json found in ${cwd}. Run "slskit init" first, or run "slskit function" from your project root.`
+      `No slskit.json found in ${cwd}. Run "slskit init" first, or run "${command}" from your project root.`
     );
   }
 
@@ -18,7 +21,7 @@ export function readProjectManifest(cwd: string): ProjectManifest {
 
   if (manifest.framework?.id !== "sam") {
     throw new CliError(
-      `"slskit function" supports AWS SAM projects only (this project uses "${manifest.framework?.id ?? "unknown"}").`
+      `"${command}" supports AWS SAM projects only (this project uses "${manifest.framework?.id ?? "unknown"}").`
     );
   }
 

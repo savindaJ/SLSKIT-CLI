@@ -1,3 +1,7 @@
+import { resetContext } from "../src/core/context";
+
+const suiteCwd = process.cwd();
+
 Object.defineProperty(process.stdin, "isTTY", {
   configurable: true,
   value: false,
@@ -5,4 +9,8 @@ Object.defineProperty(process.stdin, "isTTY", {
 
 afterEach(() => {
   process.exitCode = undefined;
+  resetContext();
+  if (process.cwd() !== suiteCwd) {
+    process.chdir(suiteCwd);
+  }
 });

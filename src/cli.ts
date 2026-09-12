@@ -1,3 +1,5 @@
+import { CliError } from "./core/errors.js";
+import { logger } from "./core/logger.js";
 import { createProgram } from "./program.js";
 
 async function main(): Promise<void> {
@@ -9,7 +11,16 @@ async function main(): Promise<void> {
     return;
   }
 
-  await program.parseAsync(process.argv);
+  try {
+    await program.parseAsync(process.argv);
+  } catch (error) {
+    if (error instanceof CliError) {
+      logger.error(error.message);
+      process.exitCode = error.exitCode;
+      return;
+    }
+    throw error;
+  }
 }
 
 void main();

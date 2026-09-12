@@ -67,10 +67,14 @@ describe("slskit CLI program", () => {
     expect(result.stdout).toMatch(/Commands:/);
   });
 
-  it("prints version with --version", async () => {
+  it("prints the published version with --version", async () => {
+    // Read from package.json rather than hardcoded, so a release bump cannot make
+    // this test fail -- and so it actually catches the two drifting apart.
+    const { version } = require("../../package.json") as { version: string };
     const result = await runProgram(["--version"]);
+
     expect(result.status).toBe(0);
-    expect(result.stdout).toMatch(/0\.1\.0/);
+    expect(result.stdout.trim()).toBe(version);
   });
 
   it("prints init help with help init", async () => {

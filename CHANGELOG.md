@@ -9,6 +9,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Global flags on every command: `--cwd`, `--debug`, `--silent`, `--json`.
+- `slskit deploy --profile` overrides the profile stored in `slskit.json` for that
+  run. Resolution order is `--profile`, then the stored profile, then `AWS_PROFILE`.
+- Generated flag reference at `docs/flags.md` (`npm run docs` / `npm run docs:check`).
+- Production-dependency license check (`npm run licenses`) and [NOTICE.md](NOTICE.md).
+- Split CI (typecheck, test, build, docs, licenses), CodeQL, and conventional PR titles.
+
+## [0.2.0] - 2026-09-12
+
+First release published to npm.
+
+### Added
+
+- `slskit rm` (aliased `slskit remove`) removes a function, or a service and every
+  function in it: the handler, the service file, the service template, the manifest
+  entry, the route, the layer attachment and the service's nesting in the root stack.
+  It asks what to remove when given no flags, prints the plan before deleting, and
+  needs `--yes` without a TTY. Removing a service's last function removes the service,
+  because a template with no resources is not valid CloudFormation; emptying the
+  project entirely is refused.
 - `slskit run` and `slskit deploy` ask what to act on — everything, one service, or a
   single function — and accept `--service`, `--function` and `--all` to skip the
   question. A scoped run serves a template containing only those functions, so SAM
@@ -44,3 +64,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [0.1.0]
 
 - Initial release.
+
+[Unreleased]: https://github.com/savindaJ/SLSKIT-CLI/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/savindaJ/SLSKIT-CLI/releases/tag/v0.2.0
+[0.1.0]: https://github.com/savindaJ/SLSKIT-CLI/releases/tag/v0.1.0

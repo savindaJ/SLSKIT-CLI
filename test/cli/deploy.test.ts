@@ -157,6 +157,20 @@ describe("slskit deploy command", () => {
     removeDir(dir);
   });
 
+  it("lets --profile override the stored profile for one run", async () => {
+    const { dir, root } = await project("slskit-dep-profile-");
+    await configureDev(root);
+    mockSpawnSync.mockClear();
+
+    const result = await runProgram(["deploy", "--yes", "--profile", "ci-role"], { cwd: root });
+
+    expect(result.status).toBe(0);
+    const deploy = samCalls().find((call) => call.startsWith("deploy"))!;
+    expect(deploy).toMatch(/--profile ci-role/);
+    expect(deploy).not.toMatch(/--profile work/);
+    removeDir(dir);
+  });
+
   it("deploys with the environment's stack, region and profile", async () => {
     const { dir, root } = await project("slskit-dep-ok-");
     await configureDev(root);

@@ -9,16 +9,33 @@ permissions:
   contents: read
 
 jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+
   test:
-    name: Node ${{ matrix.node }}
+    name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         node: ["18", "20", "22"]
-
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -26,11 +43,68 @@ jobs:
           cache: npm
 
       - run: npm ci
-
-      # Type errors that the test run would not surface on its own.
-      - run: npm run lint
-
       - run: npm test
 
-      # The published artifact is dist/, so a broken build is a broken release.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
       - run: npm run build
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run docs:check
+
+  licenses:
+    name: Licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+      - run: npm run licenses
+
+  status:
+    name: CI Status
+    needs: [typecheck, test, build, docs, licenses]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify result
+        run: |
+          for job in typecheck test build docs licenses; do
+            result=$(echo '${{ toJSON(needs) }}' | jq -r --arg job "$job" '.[$job].result')
+            if [[ "$result" != "success" ]]; then
+              echo "$job failed ($result)"
+              exit 1
+            fi
+          done

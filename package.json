@@ -1,54 +1,93 @@
 {
   "name": "slskit",
-  "version": "0.1.0",
-  "description": "Scaffold and incrementally grow multi-service AWS Lambda projects",
+  "version": "0.2.0",
+  "description": "Scaffold and grow multi-service AWS Lambda projects on AWS SAM — local runs with hot reload, isolated environments, and single-function deploys",
   "keywords": [
     "aws",
+    "aws-lambda",
     "lambda",
     "serverless",
     "aws-sam",
     "sam",
+    "sam-cli",
     "cli",
     "scaffold",
     "generator",
+    "project-generator",
+    "boilerplate",
+    "starter",
     "typescript",
+    "javascript",
+    "python",
     "api-gateway",
+    "http-api",
     "cloudformation",
-    "iac"
+    "iac",
+    "infrastructure-as-code",
+    "lambda-layer",
+    "dynamodb",
+    "hot-reload",
+    "multi-service",
+    "deployment",
+    "developer-tools"
   ],
-  "homepage": "https://github.com/savindaJ/Sless-Cli#readme",
+  "homepage": "https://github.com/savindaJ/SLSKIT-CLI#readme",
   "bugs": {
-    "url": "https://github.com/savindaJ/Sless-Cli/issues"
+    "url": "https://github.com/savindaJ/SLSKIT-CLI/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/savindaJ/Sless-Cli.git"
+    "url": "git+https://github.com/savindaJ/SLSKIT-CLI.git"
   },
   "license": "MIT",
-  "author": "Savinda Jayasekara",
+  "author": {
+    "name": "Savinda Jayasekara",
+    "url": "https://github.com/savindaJ"
+  },
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "slskit": "bin/slskit.js"
   },
   "files": [
     "bin",
     "dist",
-    "COMMAND.md"
+    "COMMAND.md",
+    "CHANGELOG.md",
+    "NOTICE.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
+    "build:release": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "dev": "tsx src/cli.ts",
-    "prepublishOnly": "npm run clean && npm run build",
+    "docs": "tsx scripts/generate-docs.ts",
+    "docs:check": "tsx scripts/generate-docs.ts --check",
+    "licenses": "node scripts/check-licenses.js",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run typecheck && npm run licenses && npm test && npm run build:release",
     "start": "node bin/slskit.js",
     "test": "jest",
+    "test:cli": "jest test/cli",
+    "test:unit": "jest test/unit",
     "test:watch": "jest --watch",
-    "lint": "tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.5.2",

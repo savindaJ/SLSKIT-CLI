@@ -1,4 +1,6 @@
+import { resolveAwsProfile } from "../../core/credentials.js";
 import { CliError } from "../../core/errors.js";
+import { isInteractive } from "../../core/is-ci.js";
 import { logger } from "../../core/logger.js";
 import {
   APP_ENVIRONMENT_KEY,
@@ -70,10 +72,15 @@ export async function deployAction(options: DeployOptions): Promise<void> {
     );
   }
 
+  const { profile } = resolveAwsProfile({
+    flag: options.profile,
+    stored: config.profile,
+  });
+
   const target = {
     stackName: config.stackName,
     region: config.region,
-    profile: config.profile,
+    profile,
   };
 
   // A variable can appear just by being typed into a .env file, so the templates are
@@ -88,7 +95,7 @@ export async function deployAction(options: DeployOptions): Promise<void> {
 
   // Checked before anything slower: without --yes a non-interactive deploy can
   // never proceed, so that is the most useful thing to say first.
-  if (!options.yes && !process.stdin.isTTY) {
+  if (!options.yes && !isInteractive()) {
     throw new CliError(
       `Deploying creates real AWS resources. Re-run with --yes to deploy "${environment}" non-interactively.`
     );

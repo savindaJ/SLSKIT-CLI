@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import { runCommand } from "../../core/run.js";
-import { configureAction } from "./action.js";
 import { DEFAULT_ENVIRONMENT } from "./types.js";
 import type { ConfigureOptions } from "./types.js";
 
@@ -21,5 +20,10 @@ export function registerConfigureCommand(program: Command): void {
       "Enter an AWS access key and store it in ~/.aws/credentials",
       false
     )
-    .action((options: ConfigureOptions) => runCommand(() => configureAction(options)));
+    .action((options: ConfigureOptions) =>
+      runCommand(async () => {
+        const { configureAction } = await import("./action.js");
+        await configureAction(options);
+      })
+    );
 }

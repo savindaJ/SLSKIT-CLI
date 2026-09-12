@@ -6,6 +6,8 @@ export interface DeployOptions {
   /** Skip the scope prompt and deploy the whole project. */
   all?: boolean;
   env?: string;
+  /** Overrides the profile stored in slskit.json for this run only. */
+  profile?: string;
   build?: boolean;
   yes?: boolean;
   skipVerify?: boolean;
