@@ -4,6 +4,7 @@ jest.mock("node:child_process", () => ({
 }));
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   ensureProjectRoot,
@@ -16,14 +17,16 @@ import { createTempDir, listFiles, removeDir } from "../helpers/cli";
 
 describe("resolveProjectRoot", () => {
   it("joins cwd and project name", () => {
-    const { root, folderName } = resolveProjectRoot("/tmp/work", "my-app");
-    expect(root).toBe(path.join("/tmp/work", "my-app"));
+    const cwd = path.join(os.tmpdir(), "work");
+    const { root, folderName } = resolveProjectRoot(cwd, "my-app");
+    expect(root).toBe(path.join(cwd, "my-app"));
     expect(folderName).toBe("my-app");
   });
 
   it('uses cwd when name is "."', () => {
-    const { root, folderName } = resolveProjectRoot("/tmp/work", ".");
-    expect(root).toBe("/tmp/work");
+    const cwd = path.join(os.tmpdir(), "work");
+    const { root, folderName } = resolveProjectRoot(cwd, ".");
+    expect(root).toBe(cwd);
     expect(folderName).toBe("work");
   });
 });

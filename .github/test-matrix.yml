@@ -1,7 +1,7 @@
 ---
 # Node.js versions tested on Linux in every PR's test matrix.
 # The minimum version should stay aligned with package.json `engines.node`.
-node_versions: ['18', '20', '22']
+node_versions: ['18.20.8', '20', '22']
 
 # Pin specific install versions for entries in `node_versions` / `primary_node_version`.
 node_install_overrides: {}
