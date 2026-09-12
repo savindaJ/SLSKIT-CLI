@@ -35,9 +35,9 @@ jobs:
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
-          node_versions=$(yq eval '.node_versions | join(" ")' .github/test-matrix.yml)
-          extra_oses=$(yq eval '.extra_oses_on_release | join(" ")' .github/test-matrix.yml)
-          always_oses=$(yq eval '.extra_oses_always | join(" ")' .github/test-matrix.yml)
+          node_versions=$(yq eval '.node_versions // [] | join(" ")' .github/test-matrix.yml)
+          extra_oses=$(yq eval '.extra_oses_on_release // [] | join(" ")' .github/test-matrix.yml)
+          always_oses=$(yq eval '.extra_oses_always // [] | join(" ")' .github/test-matrix.yml)
           primary=$(yq eval '.primary_node_version' .github/test-matrix.yml)
 
           OS_NODE=()
