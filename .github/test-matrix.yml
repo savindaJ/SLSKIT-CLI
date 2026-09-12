@@ -1,10 +1,11 @@
 ---
 # Node.js versions tested on Linux in every PR's test matrix.
 # The minimum version should stay aligned with package.json `engines.node`.
-node_versions: ['18.20.8', '20', '22']
+node_versions: ['18.20.8', '22', '24']
 
 # Pin specific install versions for entries in `node_versions` / `primary_node_version`.
-node_install_overrides: {}
+node_install_overrides:
+  '24': '24.15.0'
 
 # Additional operating systems added to the full test matrix on release branches.
 extra_oses_on_release: ['macOS-latest', 'windows-2025']
@@ -13,4 +14,4 @@ extra_oses_on_release: ['macOS-latest', 'windows-2025']
 extra_oses_always: ['macOS-latest', 'windows-2025']
 
 # The pinned version for single-version workflows and extra OS matrix entries.
-primary_node_version: '20'
+primary_node_version: '24'
