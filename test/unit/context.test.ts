@@ -22,7 +22,8 @@ describe("applyGlobalOptions", () => {
     applyGlobalOptions({ cwd: dir });
     expect(fs.realpathSync(process.cwd())).toBe(fs.realpathSync(dir));
     expect(fs.realpathSync(getContext().cwd)).toBe(fs.realpathSync(dir));
-    fs.rmSync(dir, { recursive: true, force: true });
+    process.chdir(previousCwd);
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   });
 
   it("rejects a missing --cwd", () => {
