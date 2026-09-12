@@ -1,0 +1,36 @@
+---
+name: Verify Docs
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  verify-docs:
+    name: Verify Docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read primary Node version
+        id: node
+        run: echo "version=$(yq eval '.primary_node_version' .github/test-matrix.yml)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+          cache: npm
+
+      - name: Install pinned npm version
+        run: npm install -g npm@11.19.1
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Check generated docs
+        run: npm run docs:check

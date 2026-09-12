@@ -1,35 +1,138 @@
+---
 name: Release
 
-# Publishing is driven by a version tag, so the released code is always something
-# that exists in the repository's history.
+# Two-step release on develop:
+#
+#   1. Push with pending changesets → version job bumps package.json,
+#      CHANGELOG.md, commits to develop (no tag, no publish).
+#   2. Push of that version commit → publish job creates vX.Y.Z tag
+#      and publishes to npm.
+#
+# No release branch is created — only a tag, and only after the version update.
 on:
   push:
-    tags: ["v*"]
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  version:
+    name: Version packages
+    runs-on: ubuntu-24.04
+    outputs:
+      versioned: ${{ steps.version.outputs.versioned }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - name: Read primary Node version
+        id: node
+        run: echo "version=$(yq eval '.primary_node_version' .github/test-matrix.yml)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: ${{ steps.node.outputs.version }}
+          cache: npm
+
+      - name: Install pinned npm version
+        run: npm install -g npm@11.19.1
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Apply pending changesets
+        id: version
+        run: |
+          set -euo pipefail
+
+          pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
+          if [[ "$pending" -eq 0 ]]; then
+            echo "No pending changesets; skipping version bump"
+            echo "versioned=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          npm run changeset:version
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: version packages"
+          git push origin "HEAD:${{ github.ref_name }}"
+
+          echo "versioned=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Tag and publish
+    needs: version
+    if: needs.version.outputs.versioned != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Read primary Node version
+        id: node
+        run: echo "version=$(yq eval '.primary_node_version' .github/test-matrix.yml)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node.outputs.version }}
           registry-url: https://registry.npmjs.org
           cache: npm
 
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run licenses
-      - run: npm test
+      - name: Install pinned npm version
+        run: npm install -g npm@11.19.1
 
-      # prepublishOnly runs the build, so dist/ is always freshly compiled.
-      - run: npm publish --provenance --access public
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Gate release on CI checks
+        run: |
+          npm run typecheck
+          npm run licenses
+          npm test
+
+      - name: Create tag and publish
         env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
+          if [[ "$pending" -gt 0 ]]; then
+            echo "Pending changesets remain; waiting for version job on next push"
+            exit 0
+          fi
+
+          commit_msg=$(git log -1 --pretty=%s)
+          if [[ "$commit_msg" != "chore: version packages" ]]; then
+            echo "Latest commit is not a version bump; skipping tag and publish"
+            exit 0
+          fi
+
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}"
+
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists; nothing to release"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$tag"
+
+          npm run changeset:publish
+
+          git push origin "$tag"

@@ -33,6 +33,8 @@ slskit --help
 | `npm run docs:check` | fail if generated docs are stale |
 | `npm run licenses` | check the MIT project license and production deps |
 | `npm run build` | compile `src/` to `dist/` |
+| `npm run changeset` | describe your change so it gets released |
+| `npm run changeset:status` | what the next release would contain |
 | `npm run dev` | run the CLI from source via tsx |
 
 Node 18 or newer. CI runs the suite on 18, 20 and 22.
@@ -73,13 +75,24 @@ request adding a third needs a good reason.
    sync. Do not hand-edit that file.
 4. Use a conventional PR title (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
    `test:`, `ci:`, `security:`).
-5. Describe what changed and how you verified it — including anything you ran against
+5. Run `npx changeset` if your change should appear in a release, and commit the
+   file it writes. Pick `patch` for a fix, `minor` for a new command or flag, and
+   `major` for a change that breaks existing projects. Docs, tests and chores need
+   no changeset — CI will note their absence without failing.
+6. Describe what changed and how you verified it — including anything you ran against
    real SAM.
 
 Small, focused pull requests get reviewed faster than large ones.
 
 By contributing you agree that your work is licensed under the same
 [MIT license](LICENSE) as the rest of the project.
+
+## Releases
+
+You never set a version number or write a changelog entry. Both come from the
+changeset files that ship with each pull request — merging to `develop` with pending
+changesets triggers the Release workflow, which first versions on `develop`, then
+tags and publishes on the follow-up push. The full process is in [RELEASING.md](RELEASING.md).
 
 ## Reporting bugs
 

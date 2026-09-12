@@ -1,0 +1,131 @@
+---
+name: CLI Tests
+
+on:
+  pull_request:
+    branches: ['**']
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+      has-code-changes: ${{ steps.filter.outputs.code || 'true' }}
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v6
+
+      - name: Detect code changes
+        uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!LICENSE'
+              - '!docs/**'
+              - '!.github/ISSUE_TEMPLATE/**'
+              - '!.github/PULL_REQUEST_TEMPLATE.md'
+
+      - name: Compute matrix
+        id: matrix
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          node_versions=$(yq eval '.node_versions | join(" ")' .github/test-matrix.yml)
+          extra_oses=$(yq eval '.extra_oses_on_release | join(" ")' .github/test-matrix.yml)
+          primary=$(yq eval '.primary_node_version' .github/test-matrix.yml)
+
+          OS_NODE=()
+          for node in $node_versions; do
+            OS_NODE+=("ubuntu-latest:$node")
+          done
+          if [[ "$HEAD_REF" == v* ]] || [[ "$HEAD_REF" == release/* ]]; then
+            for os in $extra_oses; do
+              OS_NODE+=("$os:$primary")
+            done
+          fi
+
+          entries=()
+          for combo in "${OS_NODE[@]}"; do
+            os="${combo%:*}"
+            node="${combo##*:}"
+            install=$(yq eval ".node_install_overrides[\"$node\"] // \"$node\"" .github/test-matrix.yml)
+            for shard in "1/4" "2/4" "3/4" "4/4"; do
+              entries+=("{\"os\":\"$os\",\"node-version\":\"$node\",\"node-install-version\":\"$install\",\"shard\":\"$shard\"}")
+            done
+          done
+          joined=$(IFS=,; echo "${entries[*]}")
+          echo "value={\"include\":[$joined]}" >> "$GITHUB_OUTPUT"
+
+  cli:
+    name: CLI
+    needs: setup
+    if: needs.setup.outputs.has-code-changes == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    steps:
+      - name: Increase Windows port limit and reduce time wait delay
+        if: matrix.os == 'windows-2025'
+        run: |
+          netsh int ipv4 set dynamicport tcp start=1025 num=64511
+          REG ADD HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\TCPIP\Parameters /v TcpTimedWaitDelay /t REG_DWORD /d 30 /f
+
+      - name: Git checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js ${{ matrix.node-install-version }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-install-version }}
+          cache: npm
+          check-latest: false
+
+      - name: Install pinned npm version
+        run: npm install -g npm@11.19.1
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run CLI tests
+        run: npm run test:cli -- --shard=${{ matrix.shard }}
+
+      - name: Sanitize shard for artefact name
+        id: sanitize-shard-name
+        run: echo "shard=$(echo '${{ matrix.shard }}' | tr '/' '-')" >> $GITHUB_OUTPUT
+
+      - name: Store npm error artefacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: npm-logs--${{ matrix.os }}--${{ matrix.node-version }}--${{ steps.sanitize-shard-name.outputs.shard }}
+          path: |
+            ~/.npm/_logs/**/*
+
+  status:
+    name: CLI Tests Status
+    needs: [setup, cli]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify result
+        run: |
+          if [[ "${{ needs.setup.result }}" != "success" ]]; then
+            echo "Setup job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.cli.result }}" == "failure" || "${{ needs.cli.result }}" == "cancelled" ]]; then
+            echo "CLI tests failed"
+            exit 1
+          fi
