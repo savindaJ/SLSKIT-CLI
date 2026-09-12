@@ -82,7 +82,11 @@ export function createTempDir(prefix = "slskit-test-"): string {
 }
 
 export function removeDir(dir: string): void {
-  fs.rmSync(dir, { recursive: true, force: true });
+  const resolved = path.resolve(dir);
+  if (path.resolve(process.cwd()) === resolved) {
+    process.chdir(os.tmpdir());
+  }
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 }
 
 export function listFiles(root: string): string[] {
@@ -97,7 +101,7 @@ export function listFiles(root: string): string[] {
       if (entry.isDirectory()) {
         walk(full);
       } else {
-        files.push(path.relative(root, full));
+        files.push(path.relative(root, full).split(path.sep).join("/"));
       }
     }
   }

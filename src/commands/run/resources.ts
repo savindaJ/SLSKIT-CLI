@@ -1,4 +1,3 @@
-import path from "node:path";
 import { pascal } from "../init/templates/helpers.js";
 
 // What a single changed file means for the build.
@@ -89,13 +88,18 @@ function fromHandler(
   };
 }
 
+function normalizeRelativePath(relativePath: string): string {
+  return relativePath.replace(/\\/g, "/");
+}
+
 export function classifyChange(
   applications: ApplicationView[],
   relativePath: string,
   sharedApi = false
 ): Change {
-  const segments = relativePath.split(path.sep).filter(Boolean);
-  const base = segments[segments.length - 1] ?? relativePath;
+  const normalizedPath = normalizeRelativePath(relativePath);
+  const segments = normalizedPath.split("/").filter(Boolean);
+  const base = segments[segments.length - 1] ?? normalizedPath;
 
   // Routes, memory, layers and parameter values are all read when sam starts.
   // Service templates live in templates/ and are named after their service, so it is
@@ -109,7 +113,7 @@ export function classifyChange(
   }
 
   if (segments[0] !== "src") {
-    return { kind: "full", label: relativePath };
+    return { kind: "full", label: normalizedPath };
   }
 
   const area = segments[1];
@@ -117,18 +121,18 @@ export function classifyChange(
 
   if (area === "functions") {
     return (
-      fromHandler(applications, rest, sharedApi) ?? { kind: "full", label: relativePath }
+      fromHandler(applications, rest, sharedApi) ?? { kind: "full", label: normalizedPath }
     );
   }
 
   if (area === "services") {
     return (
-      fromService(applications, rest, sharedApi) ?? { kind: "full", label: relativePath }
+      fromService(applications, rest, sharedApi) ?? { kind: "full", label: normalizedPath }
     );
   }
 
   // src/shared is published as a layer attached to every function in every stack.
-  return { kind: "full", label: relativePath };
+  return { kind: "full", label: normalizedPath };
 }
 
 // One decision for a whole batch of file events: the most disruptive change wins,

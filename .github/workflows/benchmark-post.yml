@@ -10,11 +10,13 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  statuses: write
 
 jobs:
+  # Do not set `name:` here — haya14busa/action-workflow_run-status matches jobs by id.
   post-package-size:
-    name: Post package size
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: haya14busa/action-workflow_run-status@v1
 
@@ -25,6 +27,7 @@ jobs:
           workflow_conclusion: success
           name: delta-action-deltas
           if_no_artifact_found: ignore
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check file existence
         id: check-file-existence
