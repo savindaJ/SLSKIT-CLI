@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0
+
+### Major Changes
+
+- a6d08e3: First stable release: slskit 1.0.0 — scaffold, run, and deploy multi-service AWS Lambda projects on AWS SAM.
+
 ## 0.2.0
 
 First release published to npm.
