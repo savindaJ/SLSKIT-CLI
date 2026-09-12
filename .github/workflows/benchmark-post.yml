@@ -8,7 +8,7 @@ on:
       - completed
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   statuses: write
 
@@ -47,4 +47,5 @@ jobs:
           title: '📊 Benchmark results'
           style: 'text'
           base_branch: develop
+          token: ${{ secrets.GITHUB_TOKEN }}
           pr_number: ${{ steps.pr_number.outputs.pr_number }}
