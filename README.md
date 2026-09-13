@@ -1,9 +1,9 @@
 # slskit
 
-[![CI](https://github.com/savindaJ/SLSKIT-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/savindaJ/SLSKIT-CLI/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/slskit.svg)](https://www.npmjs.com/package/slskit)
-[![node](https://img.shields.io/node/v/slskit.svg)](https://www.npmjs.com/package/slskit)
-[![license](https://img.shields.io/npm/l/slskit.svg)](LICENSE)
+[![CI](https://github.com/savindaJ/SLSKIT-CLI/actions/workflows/lint.yml/badge.svg)](https://github.com/savindaJ/SLSKIT-CLI/actions)
+[![npm](https://img.shields.io/npm/v/slskit-cli.svg)](https://www.npmjs.com/package/slskit-cli)
+[![node](https://img.shields.io/node/v/slskit-cli.svg)](https://www.npmjs.com/package/slskit-cli)
+[![license](https://img.shields.io/npm/l/slskit-cli.svg)](LICENSE)
 
 A CLI for scaffolding and growing multi-service AWS Lambda projects on AWS SAM.
 
@@ -17,7 +17,7 @@ Two runtime dependencies. Everything that touches AWS goes through the official
 `sam` and `aws` CLIs.
 
 ```bash
-npm install -g slskit
+npm install -g slskit-cli
 slskit init my-lambda-app
 cd my-lambda-app
 slskit run
@@ -27,7 +27,7 @@ In CI, install it locally and pin the version with a lockfile. A global install
 always pulls the latest release, including breaking changes.
 
 ```bash
-npm install --save-dev slskit
+npm install --save-dev slskit-cli
 npx slskit deploy --yes
 ```
 
