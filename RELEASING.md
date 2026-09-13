@@ -74,7 +74,14 @@ Then create the GitHub release from that tag, using the `0.2.0` section of
 
 | Secret | Used for |
 | --- | --- |
-| `NPM_TOKEN` | Publishing. Create an **Automation** token at npmjs.com → Access Tokens, then add it under Settings → Secrets and variables → Actions. A Publish token will not work: it prompts for 2FA, which a workflow cannot answer. |
+| `NPM_TOKEN` | Publishing `slskit-cli` to npmjs.org. Add it under **Settings → Secrets and variables → Actions** on `SLSKIT-CLI`. |
+
+Create the token at [npmjs.com → Access Tokens](https://www.npmjs.com/settings/tokens):
+
+1. **Classic token** → type **Automation** (not Publish), or
+2. **Granular access token** → **All packages** (or `slskit-cli`) → **Read and write (publish and stage)** → enable **Bypass two-factor authentication**.
+
+A Publish token or a granular token without bypass 2FA will fail in CI with `E403`.
 
 The workflow needs **Settings → Actions → General → Workflow permissions → Read and
 write** so it can push the version commit and tag to `develop`.

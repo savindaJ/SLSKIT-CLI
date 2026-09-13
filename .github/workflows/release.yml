@@ -14,12 +14,13 @@ concurrency:
 
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   release:
     name: Release
     runs-on: ubuntu-24.04
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -66,6 +67,14 @@ jobs:
           echo "Package version $version is not tagged yet; will release"
           echo "should_release=true" >> "$GITHUB_OUTPUT"
 
+      - name: Verify NPM_TOKEN is configured
+        if: steps.plan.outputs.should_release == 'true'
+        run: |
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "::error::NPM_TOKEN secret is missing. Add a classic Automation token or a granular token with publish access and bypass 2FA under Settings → Secrets → Actions."
+            exit 1
+          fi
+
       - name: Apply pending changesets
         if: steps.plan.outputs.should_version == 'true'
         run: |
@@ -85,12 +94,10 @@ jobs:
 
       - name: Tag, publish, and push
         if: steps.plan.outputs.should_release == 'true'
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
+          name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
           tag="v${version}"
 
@@ -103,6 +110,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag "$tag"
 
-          npm run changeset:publish
+          on_npm=$(npm view "${name}@${version}" version 2>/dev/null || true)
+          if [[ "$on_npm" == "$version" ]]; then
+            echo "${name}@${version} is already on npm; skipping publish"
+          else
+            npm run changeset:publish
+          fi
 
           git push origin "HEAD:${{ github.ref_name }}" --follow-tags
