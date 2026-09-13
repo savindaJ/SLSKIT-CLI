@@ -1,14 +1,8 @@
 ---
 name: Release
 
-# Two-step release on develop:
-#
-#   1. Push with pending changesets → version job bumps package.json,
-#      CHANGELOG.md, commits to develop (no tag, no publish).
-#   2. Push of that version commit → publish job creates vX.Y.Z tag
-#      and publishes to npm.
-#
-# No release branch is created — only a tag, and only after the version update.
+# On develop push with pending changesets (or an unpublished version commit):
+# version → test → tag → npm publish → push commit + tag in a single run.
 on:
   push:
     branches: [develop]
@@ -23,58 +17,8 @@ permissions:
   id-token: write
 
 jobs:
-  version:
-    name: Version packages
-    runs-on: ubuntu-24.04
-    outputs:
-      versioned: ${{ steps.version.outputs.versioned }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Read primary Node version
-        id: node
-        run: echo "version=$(yq eval '.primary_node_version' .github/test-matrix.yml)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ steps.node.outputs.version }}
-          cache: npm
-
-      - name: Install pinned npm version
-        shell: bash
-        run: bash .github/scripts/install-pinned-npm.sh
-
-      - name: Install dependencies
-        run: npm ci --no-audit
-
-      - name: Apply pending changesets
-        id: version
-        run: |
-          set -euo pipefail
-
-          pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
-          if [[ "$pending" -eq 0 ]]; then
-            echo "No pending changesets; skipping version bump"
-            echo "versioned=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          npm run changeset:version
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "chore: version packages"
-          git push origin "HEAD:${{ github.ref_name }}"
-
-          echo "versioned=true" >> "$GITHUB_OUTPUT"
-
-  publish:
-    name: Tag and publish
-    needs: version
-    if: needs.version.outputs.versioned != 'true'
+  release:
+    name: Release
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -98,30 +42,57 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit
 
-      - name: Gate release on CI checks
-        run: |
-          npm run typecheck
-          npm run licenses
-          npm test
-
-      - name: Create tag and publish
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Decide whether to release
+        id: plan
         run: |
           set -euo pipefail
 
           pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
           if [[ "$pending" -gt 0 ]]; then
-            echo "Pending changesets remain; waiting for version job on next push"
+            echo "Pending changesets found; will version and release"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "should_version=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           commit_msg=$(git log -1 --pretty=%s)
-          if [[ "$commit_msg" != "chore: version packages" ]]; then
-            echo "Latest commit is not a version bump; skipping tag and publish"
+          if [[ "$commit_msg" == "chore: version packages" ]]; then
+            version=$(node -p "require('./package.json').version")
+            if git rev-parse "v${version}" >/dev/null 2>&1; then
+              echo "Version commit already tagged v${version}; nothing to release"
+            else
+              echo "Unpublished version commit found; will release"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
+
+          echo "Nothing to release"
+
+      - name: Apply pending changesets
+        if: steps.plan.outputs.should_version == 'true'
+        run: |
+          set -euo pipefail
+          npm run changeset:version
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: version packages"
+
+      - name: Gate release on CI checks
+        if: steps.plan.outputs.should_release == 'true'
+        run: |
+          npm run typecheck
+          npm run licenses
+          npm test
+
+      - name: Tag, publish, and push
+        if: steps.plan.outputs.should_release == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
 
           version=$(node -p "require('./package.json').version")
           tag="v${version}"
@@ -137,4 +108,4 @@ jobs:
 
           npm run changeset:publish
 
-          git push origin "$tag"
+          git push origin "HEAD:${{ github.ref_name }}" --follow-tags
