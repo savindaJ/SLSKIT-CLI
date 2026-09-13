@@ -48,6 +48,9 @@ jobs:
           set -euo pipefail
 
           pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}"
+
           if [[ "$pending" -gt 0 ]]; then
             echo "Pending changesets found; will version and release"
             echo "should_release=true" >> "$GITHUB_OUTPUT"
@@ -55,19 +58,13 @@ jobs:
             exit 0
           fi
 
-          commit_msg=$(git log -1 --pretty=%s)
-          if [[ "$commit_msg" == "chore: version packages" ]]; then
-            version=$(node -p "require('./package.json').version")
-            if git rev-parse "v${version}" >/dev/null 2>&1; then
-              echo "Version commit already tagged v${version}; nothing to release"
-            else
-              echo "Unpublished version commit found; will release"
-              echo "should_release=true" >> "$GITHUB_OUTPUT"
-            fi
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists; nothing to release"
             exit 0
           fi
 
-          echo "Nothing to release"
+          echo "Package version $version is not tagged yet; will release"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
 
       - name: Apply pending changesets
         if: steps.plan.outputs.should_version == 'true'
