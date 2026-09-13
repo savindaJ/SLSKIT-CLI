@@ -33,13 +33,17 @@ A pull request with no changeset is fine — docs, tests and chores release noth
 CI says so rather than failing.
 
 **2. Merge to `develop`.** When pending changesets land on `develop`, the Release
-workflow runs in two steps:
+workflow runs once and:
 
-1. **Version** — applies every pending bump, rewrites `CHANGELOG.md`, deletes the
-   changeset files it consumed, and commits `chore: version packages` to `develop`.
-   No tag and no npm publish yet.
-2. **Tag and publish** — on the next push (the version commit), creates `vX.Y.Z`,
-   publishes to npm, and pushes the tag. No release branch is created.
+1. Applies every pending bump and rewrites `CHANGELOG.md`
+2. Runs typecheck, licence check, and tests
+3. Creates `vX.Y.Z`, publishes to npm, and pushes the version commit and tag to
+   `develop`
+
+No release branch is created — only a tag.
+
+If a version bump reached `develop` but publish failed, the next push to `develop`
+retries while that version still has no tag.
 
 `prepublishOnly` runs before publish, so a failing typecheck, licence check or test
 aborts the release.
