@@ -15,6 +15,7 @@ to the AWS SAM CLI and the AWS CLI for everything that touches AWS.
 | [`slskit configure`](#slskit-configure) | Set AWS credentials and the deploy target |
 | [`slskit env`](#slskit-env) | Manage environments and their variables |
 | [`slskit deploy`](#slskit-deploy-environment) | Deploy to AWS |
+| [`slskit status`](#slskit-status-environment) | Show what is deployed |
 | [`slskit doctor`](#slskit-doctor) | Check the toolchain, the project and the credentials |
 
 Conventions used below: `<required>`, `[optional]`. Every command that reads a
@@ -691,6 +692,114 @@ which is a read.
 
 ---
 
+## `slskit status [environment]`
+
+Answers "what is deployed?" — the question `slskit deploy` answers once, at the
+moment it finishes, and never again. Reads the CloudFormation stack and the Lambdas
+it created; changes nothing.
+
+```bash
+slskit status                        # default environment
+slskit status production
+slskit status --env production       # same thing
+slskit status production --json
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `environment` | Environment to report on. Defaults to the default environment. |
+
+| Flag | Meaning |
+| --- | --- |
+| `-e, --env <name>` | Same as the positional argument |
+| `--profile <name>` | AWS named profile for this run only (overrides `slskit.json`) |
+
+```text
+shop — production
+
+  stack     shop-production   UPDATE_COMPLETE
+  region    eu-west-2
+  profile   prod-admin
+  updated   2026-09-19 18:00 UTC (18 hours ago)
+
+Endpoints
+  AuthApiUrl      https://6hjgplpky0.execute-api.eu-west-2.amazonaws.com
+  ProductApiUrl   https://a1b2c3d4e5.execute-api.eu-west-2.amazonaws.com
+
+Functions
+  auth
+    login         nodejs20.x   512 MB   18 hours ago
+    register      nodejs20.x   256 MB   20 minutes ago
+  product
+    getProducts   python3.12   128 MB   2 months ago   state Pending
+    list          not deployed
+
+Hints
+  - "list" is in slskit.json but not in the stack. Deploy: slskit deploy production --all
+  - "LOG_LEVEL" is set for "production" but has not reached the deployed functions.
+    A variable is a template change: slskit deploy production --all
+```
+
+### Timestamps come from Lambda, not CloudFormation
+
+`slskit deploy --function login` is a `sam sync --code`: it updates the function and
+never touches the stack. So the stack's `updated` time and a function's time answer
+different questions, and only the second one notices a code sync.
+
+| Line | What it means |
+| --- | --- |
+| `updated` on the stack | the last time infrastructure changed — a full deploy |
+| a time beside a function | the last time *that function's code* changed, sync included |
+
+In the example above, `register` is 20 minutes old inside a stack last updated 18
+hours ago. That is a code sync, not a discrepancy.
+
+### Hints
+
+Differences between what `slskit.json` declares and what AWS actually has. All of it
+comes from the two reads already being made, so the hints cost nothing extra and
+never wait:
+
+| Hint | Means |
+| --- | --- |
+| a function is in `slskit.json` but not in the stack | it has never been deployed — `slskit deploy <env> --all` |
+| a Lambda is deployed but no longer in `slskit.json` | `slskit rm` removed it locally; a full deploy takes it out of AWS |
+| a variable has not reached the deployed functions | a variable is a template change, so a code sync will not carry it |
+| a variable is set on the functions but no longer declared | the template dropped it; a full deploy clears it |
+| a `--secret` has no value | the next deploy of that environment will stop before it starts |
+| the stack is `*_IN_PROGRESS` | what is reported is mid-change and will move |
+| the stack is `*_ROLLBACK_*` or `*_FAILED` | the last deploy did not finish; the functions may be the previous version |
+
+These are hints, not CloudFormation drift detection. `detect-stack-drift` is an
+asynchronous API you have to poll; nothing here waits on AWS.
+
+**Variable names are reported, never values.** A Lambda environment variable can hold
+a secret, so `slskit status` reads the keys and drops the values before anything is
+formatted. There is no flag that prints them.
+
+### Exit code
+
+`0` for a stack that exists and is settled or still working. `1` when:
+
+- the stack does not exist yet — the message names the deploy that creates it
+- the stack is in a failed or rolled-back state
+- the environment has no region, or the AWS CLI is missing
+
+A stack mid-deploy (`UPDATE_IN_PROGRESS`) exits `0`: it is working, not broken.
+
+### `--json`
+
+The global `--json` flag prints the whole report — stack, endpoints, every declared
+function with whatever AWS returned for it, and the hints — and nothing else reaches
+stdout.
+
+```bash
+slskit status production --json | jq -r '.endpoints[] | "\(.key)  \(.value)"'
+slskit status production --json | jq '.functions[] | select(.deployed == null) | .name'
+```
+
+---
+
 ## Typical sessions
 
 **Start a project and see it running**
@@ -735,6 +844,12 @@ slskit deploy production
 
 ```bash
 slskit deploy production --function login
+```
+
+**Check what is actually out there**
+
+```bash
+slskit status production
 ```
 
 ---
