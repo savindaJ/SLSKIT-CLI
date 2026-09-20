@@ -1,6 +1,6 @@
 {
   "name": "slskit-cli",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Scaffold and grow multi-service AWS Lambda projects on AWS SAM — local runs with hot reload, isolated environments, and single-function deploys",
   "keywords": [
     "aws",
