@@ -155,3 +155,11 @@ Flags:
 - `-y, --yes` — Skip the confirmation prompt
 - `--skip-verify` — Deploy without checking the credentials first
 - `--guided` — Run "sam deploy --guided" instead of the managed defaults
+
+## `doctor`
+
+Check that everything slskit needs is installed and configured
+
+Flags:
+
+- `-e, --env <name>` — Environment whose region, variables and credentials to check
