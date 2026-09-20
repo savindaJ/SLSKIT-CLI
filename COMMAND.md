@@ -15,6 +15,7 @@ to the AWS SAM CLI and the AWS CLI for everything that touches AWS.
 | [`slskit configure`](#slskit-configure) | Set AWS credentials and the deploy target |
 | [`slskit env`](#slskit-env) | Manage environments and their variables |
 | [`slskit deploy`](#slskit-deploy-environment) | Deploy to AWS |
+| [`slskit doctor`](#slskit-doctor) | Check the toolchain, the project and the credentials |
 
 Conventions used below: `<required>`, `[optional]`. Every command that reads a
 project must be run from the project root — the directory holding `slskit.json` —
@@ -582,6 +583,114 @@ Each environment deploys to its own stack, so they never touch each other:
 
 ---
 
+## `slskit doctor`
+
+Checks everything a working slskit project depends on, in one pass, and says what to
+do about anything that is wrong. Runs from anywhere — inside a project it checks the
+project too, outside one it checks the toolchain and says the rest was skipped.
+
+```bash
+slskit doctor
+slskit doctor --env production      # check that environment's region, variables and credentials
+slskit doctor --json                # machine-readable report
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `-e, --env <name>` | Environment whose region, variables and credentials to check. Defaults to the default environment. |
+
+### What it checks
+
+| Check | Passes when |
+| --- | --- |
+| Node.js | the running version meets the `engines.node` range slskit is published with |
+| AWS SAM CLI | `sam --version` answers |
+| AWS CLI | `aws --version` answers |
+| Docker | it is installed **and** the daemon responds to `docker info` |
+| Project | `slskit.json` parses, names the project, targets AWS SAM, and has at least one function |
+| Environment | the environment exists in the manifest and has a region |
+| Variables | every variable resolves — in particular, a `--secret` has a value in `.env.<environment>` |
+| AWS credentials | `sts get-caller-identity` succeeds for that environment's profile and region |
+
+```text
+slskit doctor — /Users/you/shop
+
+  ok    Node.js               v20.11.0
+  ok    AWS SAM CLI           1.120.0
+  ok    AWS CLI               2.15.30
+  warn  Docker                installed, but the daemon is not responding
+          fix: Start Docker Desktop (or "sudo systemctl start docker"), then re-run "slskit doctor".
+  ok    Project               "shop" — 2 services, 4 functions (slskit.json)
+  ok    Environment "dev"     stack shop-dev in us-east-1, profile "work"
+  fail  Variables             Variable "API_KEY" is marked secret for environment "dev" but is missing from .env.dev.
+          fix: Set it with: slskit env set API_KEY=<value> --secret --env dev
+  fail  AWS credentials       profile "work" was rejected in us-east-1: The config profile (work) could not be found
+          fix: slskit configure --env dev --set-credentials
+
+2 failed, 1 warning, 4 ok.
+
+Fix the checks marked "fail", then re-run "slskit doctor".
+```
+
+### Four outcomes, and only one of them fails
+
+| | Meaning |
+| --- | --- |
+| `ok` | nothing to do |
+| `warn` | something is limited but nothing is broken — the line says what it stops you doing |
+| `fail` | a command will not work until this is fixed |
+| `skip` | the answer was not knowable here, usually because an earlier check failed |
+
+**Docker is a warning, not a failure.** Only `slskit run` needs it: `sam local` runs
+functions in Lambda-like containers, but a deploy uploads a zip and never talks to
+Docker. Failing on it would block a CI deploy that was never going to need it.
+
+**A missing project is a skip, not a failure.** `slskit doctor` is meant to be the
+first thing you run on a new machine, before there is anything to check it against.
+
+### Exit code
+
+`0` unless a check failed, which makes it usable as a gate:
+
+```bash
+slskit doctor --env production && slskit deploy production --yes
+```
+
+Warnings and skips do not affect it. `--silent` suppresses the report and leaves only
+the exit code.
+
+### `--json`
+
+The global `--json` flag prints the report instead of the human output, and nothing
+else reaches stdout. The check list is always the same eight entries in the same
+order, whatever could be answered, so a CI step never has to special-case a partial
+machine.
+
+```json
+{
+  "ok": false,
+  "checks": [
+    { "id": "node", "title": "Node.js", "status": "ok", "detail": "v20.11.0" },
+    {
+      "id": "docker",
+      "title": "Docker",
+      "status": "warn",
+      "detail": "installed, but the daemon is not responding",
+      "fix": "Start Docker Desktop (or \"sudo systemctl start docker\"), then re-run \"slskit doctor\"."
+    }
+  ],
+  "summary": { "ok": 6, "warn": 1, "fail": 1, "skip": 0 }
+}
+```
+
+### It only reads
+
+`slskit doctor` never writes a file, never changes the manifest and never creates an
+AWS resource. The one thing that leaves your machine is `sts get-caller-identity`,
+which is a read.
+
+---
+
 ## Typical sessions
 
 **Start a project and see it running**
@@ -599,10 +708,17 @@ slskit function resetPassword --app auth --method POST --memory 128 --runtime ty
 slskit run --service auth
 ```
 
+**Check the machine before anything else**
+
+```bash
+slskit doctor
+```
+
 **First deploy**
 
 ```bash
 slskit configure --set-credentials
+slskit doctor
 slskit deploy dev
 ```
 

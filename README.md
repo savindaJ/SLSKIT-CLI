@@ -105,6 +105,7 @@ CLI. Secrets are never echoed, and override values are never logged.
 | `slskit configure` | Set AWS credentials and the deploy target |
 | `slskit env` | Manage environments and their variables |
 | `slskit deploy [environment]` | Deploy to AWS |
+| `slskit doctor` | Check that everything slskit needs is installed and configured |
 
 **[COMMAND.md](COMMAND.md) is the full reference** — every flag, every behaviour,
 and the reasoning behind the parts that aren't obvious.
@@ -117,6 +118,29 @@ and the reasoning behind the parts that aren't obvious.
 | [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) | to run and deploy — `slskit run` offers to install it |
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | to verify credentials and read stack outputs |
 | Docker | for `sam local`, which runs functions in Lambda-like containers |
+
+Run `slskit doctor` to check all of them at once, along with your credentials and
+the project itself. It exits non-zero if anything is actually broken, so it works
+as a CI gate before a deploy.
+
+```bash
+slskit doctor
+```
+
+```text
+  ok    Node.js               v20.11.0
+  ok    AWS SAM CLI           1.120.0
+  ok    AWS CLI               2.15.30
+  warn  Docker                installed, but the daemon is not responding
+          fix: Start Docker Desktop (or "sudo systemctl start docker"), then re-run "slskit doctor".
+  ok    Project               "shop" — 2 services, 4 functions (slskit.json)
+  ok    Environment "dev"     stack shop-dev in us-east-1, profile "work"
+  fail  Variables             Variable "API_KEY" is marked secret for environment "dev" but is missing from .env.dev.
+          fix: Set it with: slskit env set API_KEY=<value> --secret --env dev
+  skip  AWS credentials       the AWS CLI is needed to verify them
+
+1 failed, 1 warning, 5 ok, 1 skipped.
+```
 
 ## First deploy
 
