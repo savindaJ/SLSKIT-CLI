@@ -156,6 +156,15 @@ Flags:
 - `--skip-verify` — Deploy without checking the credentials first
 - `--guided` — Run "sam deploy --guided" instead of the managed defaults
 
+## `status [environment]`
+
+Show what is deployed — stack status, endpoints, functions and drift hints
+
+Flags:
+
+- `-e, --env <name>` — Environment to report on
+- `--profile <name>` — AWS named profile to use for this run only
+
 ## `doctor`
 
 Check that everything slskit needs is installed and configured
