@@ -34,7 +34,7 @@ remove or edit comments, commits, code, issues and other contributions that do n
 align with this Code of Conduct.
 
 Abusive, harassing or otherwise unacceptable behaviour may be reported to
-**beecodelabs.savinda@gmail.com**. All complaints will be reviewed and investigated
+**nt.savinda@gmail.com**. All complaints will be reviewed and investigated
 promptly and fairly, and the privacy and security of the reporter will be respected.
 
 ## Attribution
