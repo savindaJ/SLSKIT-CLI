@@ -75,10 +75,10 @@ export function parameterOverrides(
 // The shorthand "Key=Value" form the AWS SAM CLI also accepts splits on whitespace,
 // so a value with a space in it is silently truncated -- "hello world" arrives as
 // "hello". The explicit ParameterKey/ParameterValue form with the value quoted is the
-// only one that survives spaces, commas and equals signs alike. Backslashes are
-// deliberately left alone: escaping them doubles them.
+// only one that survives spaces, commas and equals signs alike.
 function quoteValue(value: string): string {
-  return `"${value.replace(/"/g, '\\"')}"`;
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
 }
 
 export function toCliArguments(overrides: ParameterOverride[]): string[] {
