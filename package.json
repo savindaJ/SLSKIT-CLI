@@ -1,7 +1,7 @@
 {
   "name": "slskit-cli",
   "version": "1.2.0",
-  "description": "Scaffold and grow multi-service AWS Lambda projects on AWS SAM — local runs with hot reload, isolated environments, and single-function deploys",
+  "description": "Scaffold and grow multi-service AWS Lambda projects on AWS SAM \u2014 local runs with hot reload, isolated environments, and single-function deploys",
   "keywords": [
     "aws",
     "aws-lambda",
@@ -73,20 +73,20 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc",
-    "build:release": "npm run clean && tsc -p tsconfig.build.json",
+    "build": "node init && tsc",
+    "build:release": "node init && npm run clean && tsc -p tsconfig.build.json",
     "changeset": "changeset",
     "changeset:publish": "changeset publish",
     "changeset:status": "changeset status --verbose",
     "changeset:version": "changeset version",
     "clean": "rm -rf dist",
-    "dev": "tsx src/cli.ts",
+    "dev": "node init && tsx src/cli.ts",
     "docs": "tsx scripts/generate-docs.ts",
     "docs:check": "tsx scripts/generate-docs.ts --check",
     "licenses": "node scripts/check-licenses.js",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run clean && npm run typecheck && npm run licenses && npm test && npm run build:release",
-    "start": "node bin/slskit.js",
+    "start": "node init && node bin/slskit.js",
     "test": "jest",
     "test:cli": "jest test/cli",
     "test:unit": "jest test/unit",

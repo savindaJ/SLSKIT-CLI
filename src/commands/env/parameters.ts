@@ -76,9 +76,13 @@ export function parameterOverrides(
 // so a value with a space in it is silently truncated -- "hello world" arrives as
 // "hello". The explicit ParameterKey/ParameterValue form with the value quoted is the
 // only one that survives spaces, commas and equals signs alike. Backslashes are
-// deliberately left alone: escaping them doubles them.
+// deliberately left alone: escaping them doubles them in the value SAM receives.
 function quoteValue(value: string): string {
-  return `"${value.replace(/"/g, '\\"')}"`;
+  let escaped = "";
+  for (const ch of value) {
+    escaped += ch === '"' ? '\\"' : ch;
+  }
+  return `"${escaped}"`;
 }
 
 export function toCliArguments(overrides: ParameterOverride[]): string[] {
