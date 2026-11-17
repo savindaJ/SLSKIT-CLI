@@ -46,6 +46,21 @@ Flags:
 - `--no-watch` — Do not rebuild on file changes (stop and re-run to pick up edits)
 - `-e, --env <name>` — Environment whose variables to run with (default: the default environment)
 
+## `invoke [function]`
+
+Invoke one function locally with sam, or remotely in AWS with --remote
+
+Flags:
+
+- `-e, --env <name>` — Environment whose variables to use (default environment)
+- `-s, --service <name>` — Service the function belongs to (with --function)
+- `--function <name>` — Function to invoke (same as the positional name)
+- `--event <path>` — JSON event file to pass to the handler
+- `--remote` — Invoke the deployed Lambda in AWS instead of sam local
+- `--no-build` — Skip "sam build" before a local invoke
+- `--profile <name>` — AWS named profile (remote invoke only)
+- `--out <path>` — File for the remote invoke response (default: .slskit-invoke-response.json)
+
 ## `function [name]`
 
 Add a function to an existing or new application in this project

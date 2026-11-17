@@ -130,6 +130,7 @@ CLI. Secrets are never echoed, and override values are never logged.
 | --- | --- |
 | `slskit init [name]` | Scaffold a new project |
 | `slskit run [environment]` | Run it locally on one API Gateway port |
+| `slskit invoke [function]` | Invoke one function locally or on AWS (`--remote`) |
 | `slskit function [name]` | Add a function to a new or existing service |
 | `slskit rm [name]` | Remove a function or a service, and everything that referenced it |
 | `slskit configure` | Set AWS credentials and the deploy target |
