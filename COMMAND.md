@@ -10,6 +10,7 @@ to the AWS SAM CLI and the AWS CLI for everything that touches AWS.
 | --- | --- |
 | [`slskit init`](#slskit-init-name) | Scaffold a new project |
 | [`slskit run`](#slskit-run-environment) | Run it locally on one API Gateway port |
+| [`slskit invoke`](#slskit-invoke-function) | Invoke one function locally or on AWS |
 | [`slskit function`](#slskit-function-name) | Add a function to a new or existing service |
 | [`slskit rm`](#slskit-rm-name) | Remove a function or a service |
 | [`slskit configure`](#slskit-configure) | Set AWS credentials and the deploy target |
@@ -209,6 +210,43 @@ Environment variables reach the running functions exactly as they will in AWS, a
 override values are never printed — only how many there are. A `--secret` variable
 missing from `.env.<environment>` fails before SAM starts rather than booting with an
 empty value.
+
+---
+
+## `slskit invoke [function]`
+
+Invokes one Lambda handler directly — locally through `sam local invoke`, or on AWS
+with `--remote`. Use this to test a handler with a JSON event instead of crafting an
+HTTP request through API Gateway.
+
+```bash
+slskit invoke login --event events/login.json
+slskit invoke login --remote --env production --event events/login.json
+slskit invoke getProducts --function getProducts --service product --no-build
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `function` | Function to invoke. Same as `--function`. |
+
+| Flag | Meaning |
+| --- | --- |
+| `-e, --env <name>` | Environment whose variables to use (default: the default environment) |
+| `-s, --service <name>` | Narrow to a service when picking interactively |
+| `--function <name>` | Function to invoke (same as the positional argument) |
+| `--event <path>` | JSON event file passed to the handler |
+| `--remote` | Invoke the deployed Lambda in AWS instead of `sam local invoke` |
+| `--no-build` | Skip `sam build` before a local invoke |
+| `--profile <name>` | AWS profile for `--remote` (overrides `slskit.json` for this run) |
+| `--out <path>` | Where to write the remote invoke response (default `.slskit-invoke-response.json`) |
+
+Locally, slskit builds a narrowed `.slskit-local.yaml` for just that function (same
+idea as `slskit run --function`), applies the environment's parameter overrides, then
+runs `sam local invoke <resource> -e <event>`. On AWS it calls `aws lambda invoke` using
+the physical name `<project>-<environment>-<function>` from `slskit status`.
+
+In a non-interactive shell you must name the function — pass it as the positional
+argument or with `--function`.
 
 ---
 
@@ -817,6 +855,13 @@ slskit function resetPassword --app auth --method POST --memory 128 --runtime ty
 slskit run --service auth
 ```
 
+**Call one handler with a JSON event**
+
+```bash
+slskit invoke login --event events/login.json
+slskit invoke login --remote --env production --event events/login.json
+```
+
 **Check the machine before anything else**
 
 ```bash
@@ -863,5 +908,6 @@ slskit status production
 | `templates/<service>.yaml` | yes | one stack per service |
 | `.env.<environment>` | **no** | that environment's variable values |
 | `.slskit-local.yaml` | **no** | generated local-run template |
+| `.slskit-invoke-response.json` | **no** | default output from `slskit invoke --remote` |
 | `.aws-sam/` | **no** | SAM build output |
 | `~/.aws/credentials` | n/a | outside the project; where access keys go |

@@ -12,6 +12,7 @@ export function gitignore(runtime: InitAnswers["runtime"]): string {
     "dist/",
     ".aws-sam/",
     ".slskit-local.yaml",
+    ".slskit-invoke-response.json",
     ".env",
     ".env.*",
     ".DS_Store",
@@ -64,7 +65,14 @@ export function readme(answers: InitAnswers): string {
     ...(answers.database !== "none" ? ["│   │   └── db." + sourceExt(answers.runtime)] : []),
   ];
 
-  const nextSteps = ["```bash", "sam build", "sam deploy --guided", "```"];
+  const nextSteps = [
+    "```bash",
+    "slskit run                              # local API",
+    "slskit invoke login                     # one handler (add --event <file> when ready)",
+    "slskit configure --set-credentials",
+    "slskit deploy dev",
+    "```",
+  ];
 
   return `# ${answers.name}
 

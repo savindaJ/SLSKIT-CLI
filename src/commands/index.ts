@@ -4,6 +4,7 @@ import { registerDeployCommand } from "./deploy/index.js";
 import { registerDoctorCommand } from "./doctor/index.js";
 import { registerEnvCommand } from "./env/index.js";
 import { registerFunctionCommand } from "./function/index.js";
+import { registerInvokeCommand } from "./invoke/index.js";
 import { registerInitCommand } from "./init/index.js";
 import { registerRmCommand } from "./rm/index.js";
 import { registerRunCommand } from "./run/index.js";
@@ -12,6 +13,7 @@ import { registerStatusCommand } from "./status/index.js";
 export function registerCommands(program: Command): void {
   registerInitCommand(program);
   registerRunCommand(program);
+  registerInvokeCommand(program);
   registerFunctionCommand(program);
   registerRmCommand(program);
   registerConfigureCommand(program);

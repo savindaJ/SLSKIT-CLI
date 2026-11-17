@@ -49,6 +49,7 @@ mkdir /tmp/probe && cd /tmp/probe
 slskit init probe --runtime typescript --database none \
   --api-gateway yes --layer yes --memory 128
 slskit run
+slskit invoke login   # local; add --event path/to.json when you have one
 ```
 
 A change that passes the suite but was never run against `sam build` or

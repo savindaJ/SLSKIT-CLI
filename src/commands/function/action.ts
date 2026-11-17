@@ -89,5 +89,7 @@ export async function functionAction(options: FunctionOptions): Promise<void> {
     );
   }
 
-  logger.info('\nRun "slskit run" to try it locally.');
+  logger.info(
+    `\nRun "slskit invoke ${picked.functionName}" to call it directly, or "slskit run" for the local API.`
+  );
 }
