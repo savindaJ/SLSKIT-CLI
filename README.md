@@ -28,7 +28,9 @@ always pulls the latest release, including breaking changes.
 
 ```bash
 npm install --save-dev slskit-cli
+npx slskit doctor
 npx slskit deploy --yes
+npx slskit invoke login --event events/smoke.json   # after deploy, optional smoke test
 ```
 
 That's a running API on `http://127.0.0.1:3000` with two services, four functions, a
@@ -80,6 +82,14 @@ slskit deploy dev --function login # code-only update of one function
 
 Both commands ask if you don't tell them. A scoped run builds only the functions it
 serves; a scoped deploy uses `sam sync --code`, which is far faster than a full one.
+
+**Invoke one handler without HTTP.** Test a Lambda directly with a JSON event — locally
+through SAM or on the function already deployed in AWS.
+
+```bash
+slskit invoke login --event events/login.json
+slskit invoke login --remote --env production --event events/login.json
+```
 
 **Hot reload.** `slskit run` watches `src/` and rebuilds only the function you
 touched — the next request uses the new code, no restart. A broken file leaves the
@@ -147,7 +157,7 @@ and the reasoning behind the parts that aren't obvious.
 | | |
 | --- | --- |
 | Node.js | 18 or newer |
-| [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) | to run and deploy — `slskit run` offers to install it |
+| [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) | for `slskit run` and local `slskit invoke` — `slskit run` offers to install it |
 | [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | to verify credentials and read stack outputs |
 | Docker | for `sam local`, which runs functions in Lambda-like containers |
 

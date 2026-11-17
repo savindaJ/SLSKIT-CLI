@@ -855,6 +855,13 @@ slskit function resetPassword --app auth --method POST --memory 128 --runtime ty
 slskit run --service auth
 ```
 
+**Call one handler with a JSON event**
+
+```bash
+slskit invoke login --event events/login.json
+slskit invoke login --remote --env production --event events/login.json
+```
+
 **Check the machine before anything else**
 
 ```bash
@@ -901,5 +908,6 @@ slskit status production
 | `templates/<service>.yaml` | yes | one stack per service |
 | `.env.<environment>` | **no** | that environment's variable values |
 | `.slskit-local.yaml` | **no** | generated local-run template |
+| `.slskit-invoke-response.json` | **no** | default output from `slskit invoke --remote` |
 | `.aws-sam/` | **no** | SAM build output |
 | `~/.aws/credentials` | n/a | outside the project; where access keys go |
